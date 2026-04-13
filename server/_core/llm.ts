@@ -12,7 +12,7 @@ function normalizeMessage(message: Message) {
   };
 }
 
-export async function callLLM(messages: Message[]): Promise<string> {
+export async function invokeLLM(messages: Message[]): Promise<string> {
   if (!ENV.forgeApiKey) {
     throw new Error("OpenAI API key not configured");
   }
