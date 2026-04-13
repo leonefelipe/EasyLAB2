@@ -8,10 +8,32 @@ export type Message = {
   name?: string;
 };
 
+export type JsonSchemaFormat = {
+  type: "json_schema";
+  json_schema: {
+    name: string;
+    strict?: boolean;
+    schema: Record<string, unknown>;
+  };
+};
+
+export type JsonObjectFormat = {
+  type: "json_object";
+};
+
+export type TextFormat = {
+  type: "text";
+};
+
+export type ResponseFormat = JsonSchemaFormat | JsonObjectFormat | TextFormat;
+
 export type InvokeParams = {
   messages: Message[];
   maxTokens?: number;
+  /** @deprecated Use response_format instead */
   responseFormat?: { type: "text" | "json_object" | "json_schema" };
+  /** OpenAI-compatible response_format. Supports json_object and json_schema. */
+  response_format?: ResponseFormat;
 };
 
 export type InvokeResult = {
@@ -23,15 +45,16 @@ export type InvokeResult = {
 };
 
 function normalizeMessage(message: Message) {
-  const content = typeof message.content === "string" 
-    ? message.content 
-    : Array.isArray(message.content) 
-      ? message.content.map(p => p.text || "").join("\n") 
-      : message.content.text || "";
-      
+  const content =
+    typeof message.content === "string"
+      ? message.content
+      : Array.isArray(message.content)
+        ? message.content.map((p: any) => p.text || "").join("\n")
+        : message.content.text || "";
+
   return {
     role: message.role === "model" ? "assistant" : message.role,
-    content: content
+    content: content,
   };
 }
 
@@ -44,26 +67,28 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     model: ENV.model || "openrouter/free",
     messages: params.messages.map(normalizeMessage),
     temperature: 0.1,
-    max_tokens: params.maxTokens || 8192
+    max_tokens: params.maxTokens || 8192,
   };
 
-  // Trava de segurança: Força a IA a responder em JSON estruturado
-  if (params.responseFormat && params.responseFormat.type === "json_object") {
+  // Prioridade: response_format (snake_case, OpenAI-compatible) > responseFormat (legado)
+  if (params.response_format) {
+    payload.response_format = params.response_format;
+  } else if (params.responseFormat && params.responseFormat.type === "json_object") {
     payload.response_format = { type: "json_object" };
   }
 
   const baseUrl = ENV.forgeApiUrl || "https://openrouter.ai/api/v1";
-  const apiUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  const apiUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
 
   const response = await fetch(`${apiUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${ENV.forgeApiKey}`,
+      Authorization: `Bearer ${ENV.forgeApiKey}`,
       "HTTP-Referer": "https://easyjob.com",
-      "X-Title": "EasyJob"
+      "X-Title": "EasyJob",
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -76,9 +101,11 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
 
   return {
     id: `llm-${Date.now()}`,
-    choices: [{
-      message: { role: "assistant", content },
-      finish_reason: "stop"
-    }]
+    choices: [
+      {
+        message: { role: "assistant", content },
+        finish_reason: "stop",
+      },
+    ],
   };
 }
