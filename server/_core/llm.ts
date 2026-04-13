@@ -23,7 +23,6 @@ export type InvokeResult = {
 };
 
 function normalizeMessage(message: Message) {
-  // Garante que o texto seja extraído corretamente caso venha em formatos diferentes
   const content = typeof message.content === "string" 
     ? message.content 
     : Array.isArray(message.content) 
@@ -38,19 +37,22 @@ function normalizeMessage(message: Message) {
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   if (!ENV.forgeApiKey) {
-    throw new Error("Chave da API não configurada no Render (BUILT_IN_FORGE_API_KEY)");
+    throw new Error("API Key ausente. Configure BUILT_IN_FORGE_API_KEY no Render.");
   }
 
-  const payload = {
-    model: ENV.model || "meta-llama/llama-3.1-8b-instruct:free",
+  const payload: any = {
+    model: ENV.model || "openrouter/free",
     messages: params.messages.map(normalizeMessage),
     temperature: 0.1,
     max_tokens: params.maxTokens || 8192
   };
 
-  // Puxa a URL base do Render ou usa a da OpenRouter como padrão
+  // Trava de segurança: Força a IA a responder em JSON estruturado
+  if (params.responseFormat && params.responseFormat.type === "json_object") {
+    payload.response_format = { type: "json_object" };
+  }
+
   const baseUrl = ENV.forgeApiUrl || "https://openrouter.ai/api/v1";
-  // Evita duplicar a barra caso a URL termine com /
   const apiUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
 
   const response = await fetch(`${apiUrl}/chat/completions`, {
@@ -58,8 +60,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${ENV.forgeApiKey}`,
-      "HTTP-Referer": "https://easyjob.com", // Obrigatório na OpenRouter
-      "X-Title": "EasyJob" // Obrigatório na OpenRouter
+      "HTTP-Referer": "https://easyjob.com",
+      "X-Title": "EasyJob"
     },
     body: JSON.stringify(payload)
   });
@@ -72,7 +74,6 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   const data = await response.json();
   const content = data?.choices?.[0]?.message?.content ?? "";
 
-  // Retorna o formato exato que o seu backend espera
   return {
     id: `llm-${Date.now()}`,
     choices: [{
