@@ -91,7 +91,8 @@ function buildResumeHtml(resumeText: string, lang: "pt" | "en" = "pt"): string {
       if (bulletGroup) { html += `</ul>`; bulletGroup = false; }
       if (inSection) html += `</div>`;
       html += `<div class="section">`;
-      html += `<div class="section-header">${line}</div>`;
+      const semLinha = (line.includes("GESTÃO") || line.includes("GESTAO") || line.includes("TECNOLOGIA")) ? ' style="border-bottom: none; padding-bottom: 0;"' : '';
+html += `<div class="section-header"${semLinha}>${line}</div>`;
       html += `<div class="section-content">`;
       inSection = true;
       continue;
@@ -99,7 +100,8 @@ function buildResumeHtml(resumeText: string, lang: "pt" | "en" = "pt"): string {
 
     if (isSubSection(line)) {
       if (bulletGroup) { html += `</ul>`; bulletGroup = false; }
-      html += `<div class="subsection-header">${line}</div>`;
+      const semLinhaSub = (line.includes("GESTÃO") || line.includes("GESTAO") || line.includes("TECNOLOGIA")) ? ' style="border-bottom: none;"' : '';
+html += `<div class="subsection-header"${semLinhaSub}>${line}</div>`;
       continue;
     }
 
