@@ -118,7 +118,6 @@ function buildResumeHtml(resumeText: string, lang: "pt" | "en" = "pt"): string {
       bulletGroup = false;
     }
 
-    // Linha de cargo/empresa (contém | ou – ou -)
     if (line.includes(" | ") || line.includes(" – ") || line.match(/\w+\s*[-–]\s*\w+/)) {
       html += `<div class="job-line">${line}</div>`;
     } else {
@@ -252,15 +251,6 @@ function buildResumeHtml(resumeText: string, lang: "pt" | "en" = "pt"): string {
     font-weight: 700;
   }
 
-  .footer {
-    margin-top: 20px;
-    padding-top: 8px;
-    border-top: 1px solid #e5e7eb;
-    font-size: 8pt;
-    color: #9ca3af;
-    text-align: center;
-  }
-
   @media print {
     body { padding: 0; }
     .page { padding: 15mm 18mm; }
@@ -273,9 +263,6 @@ function buildResumeHtml(resumeText: string, lang: "pt" | "en" = "pt"): string {
     ${html.split('<div class="section">')[0]}
   </div>
   ${html.includes('<div class="section">') ? '<div class="sections">' + html.split('<div class="section">').slice(1).map(s => '<div class="section">' + s).join('') + '</div>' : ''}
-  <div class="footer">
-    Gerado por Easy Job AI — ${new Date().toLocaleDateString(lang === "en" ? "en-US" : "pt-BR", { year: "numeric", month: "long", day: "numeric" })}
-  </div>
 </div>
 </body>
 </html>`;
