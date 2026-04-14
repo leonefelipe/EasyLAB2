@@ -28,6 +28,21 @@ interface JobListing {
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
+interface ImprovedBullet {
+  original: string;
+  improved: string;
+  reason: string;
+}
+
+interface AtsScoreBreakdown {
+  parsing: number;
+  keywordMatch: number;
+  experienceQuality: number;
+  impactMetrics: number;
+  formatting: number;
+  skillsAlignment: number;
+}
+
 interface AnalysisResult {
   matchScore: number;
   projectedMatchScore: number;
@@ -41,6 +56,17 @@ interface AnalysisResult {
   scoreBreakdown: { technicalSkills: number; experience: number; keywords: number; tools: number; seniority: number };
   coverLetterPoints?: string[];
   gapAnalysis?: string[];
+  // Elite ATS fields
+  atsScore?: number;
+  atsScoreBreakdown?: AtsScoreBreakdown;
+  strengths?: string[];
+  weaknesses?: string[];
+  missingKeywords?: string[];
+  improvedBullets?: ImprovedBullet[];
+  recruiterInsights?: string[];
+  seniorityLevel?: string;
+  careerTrajectory?: string;
+  formattingIssues?: string[];
 }
 
 interface SavedCV {
@@ -969,6 +995,176 @@ export default function Home() {
                 ))}
               </div>
             </Card>
+
+            {/* Elite ATS Score */}
+            {results.atsScore !== undefined && results.atsScoreBreakdown && (
+              <Card className={`p-8 border-2 ${isDarkMode ? "bg-slate-800 border-violet-800" : "border-violet-200 bg-gradient-to-br from-violet-50/60 to-white"}`}>
+                <div className="flex items-start gap-3 mb-6">
+                  <div className="w-12 h-12 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
+                    <TrendingUp className="w-6 h-6 text-violet-700" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <h3 className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>ATS Score Elite</h3>
+                      <span className={`text-3xl font-black ${results.atsScore >= 75 ? "text-green-600" : results.atsScore >= 55 ? "text-amber-600" : "text-red-600"}`}>{results.atsScore}/100</span>
+                    </div>
+                    <p className={`text-sm mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Pontuação ponderada como os maiores ATS do mercado calculam</p>
+                    {results.seniorityLevel && (
+                      <span className="mt-2 inline-block px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-medium">{results.seniorityLevel}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-3 mb-6">
+                  {[
+                    { label: "Parseabilidade ATS", value: results.atsScoreBreakdown.parsing, max: 20, tip: "Quão bem o ATS consegue extrair seu currículo" },
+                    { label: "Match de Keywords", value: results.atsScoreBreakdown.keywordMatch, max: 25, tip: "Densidade de palavras-chave da vaga no currículo" },
+                    { label: "Qualidade da Experiência", value: results.atsScoreBreakdown.experienceQuality, max: 20, tip: "Bullets de impacto vs. bullets de tarefa" },
+                    { label: "Métricas de Impacto", value: results.atsScoreBreakdown.impactMetrics, max: 15, tip: "Conquistas quantificadas (%, R$, escala)" },
+                    { label: "Formatação ATS-Safe", value: results.atsScoreBreakdown.formatting, max: 10, tip: "Ausência de emojis, tabelas, markdown" },
+                    { label: "Alinhamento de Skills", value: results.atsScoreBreakdown.skillsAlignment, max: 10, tip: "Seção de competências vs. requisitos da vaga" },
+                  ].map(item => (
+                    <div key={item.label} className="flex items-center gap-3">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className={`text-sm w-52 flex-shrink-0 cursor-help flex items-center gap-1 ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
+                            {item.label}
+                            <Info className="w-3 h-3 text-slate-400" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs text-xs">{item.tip}</TooltipContent>
+                      </Tooltip>
+                      <div className={`flex-1 rounded-full h-2.5 ${isDarkMode ? "bg-slate-700" : "bg-slate-100"}`}>
+                        <div className="h-2.5 rounded-full bg-violet-600 transition-all duration-700" style={{ width: `${(item.value / item.max) * 100}%` }} />
+                      </div>
+                      <span className={`text-sm font-medium w-14 text-right ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>{item.value}/{item.max}</span>
+                    </div>
+                  ))}
+                </div>
+                {results.careerTrajectory && (
+                  <div className={`p-4 rounded-lg border ${isDarkMode ? "bg-slate-700 border-slate-600" : "bg-violet-50 border-violet-200"}`}>
+                    <p className={`text-xs font-semibold uppercase tracking-wide mb-1 ${isDarkMode ? "text-violet-400" : "text-violet-700"}`}>Trajetória de Carreira</p>
+                    <p className={`text-sm ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>{results.careerTrajectory}</p>
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* Strengths & Weaknesses */}
+            {results.strengths && results.weaknesses && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card className={`p-6 border-2 ${isDarkMode ? "bg-slate-800 border-green-800" : "border-green-200 bg-green-50/30"}`}>
+                  <h4 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+                    <CheckCircle className="w-5 h-5 text-green-600" /> Pontos Fortes
+                  </h4>
+                  <ul className="space-y-2">
+                    {results.strengths.map((s, i) => (
+                      <li key={i} className={`text-sm flex gap-2 ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
+                        <span className="text-green-500 mt-0.5 flex-shrink-0">✓</span>{s}
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+                <Card className={`p-6 border-2 ${isDarkMode ? "bg-slate-800 border-red-800" : "border-red-200 bg-red-50/30"}`}>
+                  <h4 className={`text-lg font-bold mb-4 flex items-center gap-2 ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+                    <AlertTriangle className="w-5 h-5 text-red-500" /> Pontos a Melhorar
+                  </h4>
+                  <ul className="space-y-2">
+                    {results.weaknesses.map((w, i) => (
+                      <li key={i} className={`text-sm flex gap-2 ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
+                        <span className="text-red-400 mt-0.5 flex-shrink-0">!</span>{w}
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              </div>
+            )}
+
+            {/* Missing Keywords */}
+            {results.missingKeywords && results.missingKeywords.length > 0 && (
+              <Card className={`p-8 border-2 ${isDarkMode ? "bg-slate-800 border-amber-700" : "border-amber-200 bg-amber-50/30"}`}>
+                <div className="flex items-start gap-3 mb-5">
+                  <AlertTriangle className="w-6 h-6 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h3 className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>Keywords Ausentes no Currículo</h3>
+                    <p className={`text-sm mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Termos exatos da vaga não encontrados no seu currículo — o ATS vai penalizar</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {results.missingKeywords.map((kw, i) => (
+                    <span key={i} className={`px-3 py-1.5 rounded-full text-sm font-medium border ${isDarkMode ? "bg-red-900/30 text-red-300 border-red-700" : "bg-red-50 text-red-700 border-red-200"}`}>{kw}</span>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {/* Improved Bullets */}
+            {results.improvedBullets && results.improvedBullets.length > 0 && (
+              <Card className={`p-8 border-2 ${isDarkMode ? "bg-slate-800 border-slate-700" : "border-slate-200"}`}>
+                <div className="flex items-start gap-3 mb-6">
+                  <div className="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <Zap className="w-6 h-6 text-blue-700" />
+                  </div>
+                  <div>
+                    <h3 className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>Bullets Reescritos (Método STAR)</h3>
+                    <p className={`text-sm mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Transformação de bullets fracos em bullets de alto impacto</p>
+                  </div>
+                </div>
+                <div className="space-y-5">
+                  {results.improvedBullets.map((bullet, i) => (
+                    <div key={i} className={`rounded-xl border p-5 ${isDarkMode ? "bg-slate-700 border-slate-600" : "bg-slate-50 border-slate-200"}`}>
+                      <div className="space-y-3">
+                        <div className={`p-3 rounded-lg ${isDarkMode ? "bg-red-900/20 border border-red-800" : "bg-red-50 border border-red-200"}`}>
+                          <p className="text-xs font-semibold text-red-500 uppercase tracking-wide mb-1">Original (fraco)</p>
+                          <p className={`text-sm ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>{bullet.original}</p>
+                        </div>
+                        <div className={`p-3 rounded-lg ${isDarkMode ? "bg-green-900/20 border border-green-800" : "bg-green-50 border border-green-200"}`}>
+                          <p className="text-xs font-semibold text-green-600 uppercase tracking-wide mb-1">Reescrito (STAR)</p>
+                          <p className={`text-sm font-medium ${isDarkMode ? "text-green-300" : "text-green-800"}`}>{bullet.improved}</p>
+                        </div>
+                        <p className={`text-xs ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}><span className="font-semibold">Por quê: </span>{bullet.reason}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {/* Recruiter Insights */}
+            {results.recruiterInsights && results.recruiterInsights.length > 0 && (
+              <Card className={`p-8 border-2 ${isDarkMode ? "bg-slate-800 border-blue-800" : "border-blue-100 bg-blue-50/20"}`}>
+                <div className="flex items-start gap-3 mb-5">
+                  <User className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h3 className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>Olhar do Recrutador Sênior</h3>
+                    <p className={`text-sm mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>O que um headhunter experiente notaria ao analisar seu perfil para esta vaga</p>
+                  </div>
+                </div>
+                <ul className="space-y-3">
+                  {results.recruiterInsights.map((insight, i) => (
+                    <li key={i} className={`flex gap-3 items-start p-3 rounded-lg ${isDarkMode ? "bg-slate-700" : "bg-white border border-blue-100"}`}>
+                      <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0 text-xs font-bold mt-0.5">{i + 1}</span>
+                      <p className={`text-sm ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>{insight}</p>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
+
+            {/* Formatting Issues */}
+            {results.formattingIssues && results.formattingIssues.length > 0 && (
+              <Card className={`p-6 border-2 ${isDarkMode ? "bg-slate-800 border-red-800" : "border-red-200 bg-red-50/20"}`}>
+                <h4 className={`font-bold mb-3 flex items-center gap-2 ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+                  <AlertTriangle className="w-5 h-5 text-red-500" /> Problemas de Formatação Detectados pelo ATS
+                </h4>
+                <ul className="space-y-1.5">
+                  {results.formattingIssues.map((issue, i) => (
+                    <li key={i} className={`text-sm flex gap-2 ${isDarkMode ? "text-red-300" : "text-red-700"}`}>
+                      <span className="flex-shrink-0 mt-0.5">⚠</span>{issue}
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
 
             {/* Suggestions */}
             <Card className={`p-8 border-2 ${isDarkMode ? "bg-slate-800 border-slate-700" : "border-slate-200"}`}>
