@@ -431,8 +431,9 @@ skillsAlignment (0-10): Skills section alignment with JD requirements
 - 3-5: Partial alignment
 - 0-2: Little to no alignment
 
-atsScore = weighted average:
-atsScore = round((parsing × 0.20) + (keywordMatch × 0.25) + (experienceQuality × 0.20) + (impactMetrics × 0.15) + (formatting × 0.10) + (skillsAlignment × 0.10)) × 100 / 100
+atsScore = DIRECT SUM of all six components (they are already scaled so maximums sum to 100):
+atsScore = parsing + keywordMatch + experienceQuality + impactMetrics + formatting + skillsAlignment
+(Max possible: 20+25+20+15+10+10 = 100 — DO NOT multiply by decimal weights)
 
 LEGACY scoreBreakdown (0-100 total):
 technicalSkills (0-30): Skills candidate HAS vs. what job REQUIRES
@@ -479,8 +480,10 @@ AUTO-VERIFICATION before returning:
 □ No skill was invented?
 □ optimizedResume has ZERO emojis and ZERO markdown?
 □ matchScore = exact sum of scoreBreakdown?
-□ atsScore = weighted average of atsScoreBreakdown?
+□ atsScore = direct sum of all six atsScoreBreakdown components?
 □ Each improvedBullet.original actually exists (or closely resembles) a bullet in the resume?
+□ Header line 3 has ALL contact info (city, phone, email, LinkedIn) on ONE SINGLE LINE pipe-separated?
+□ optimizedResume is written in Brazilian Portuguese?
 IF ANY ANSWER IS NO → FIX BEFORE RETURNING.
 
 ════════════════════════════════════════════════════════════
@@ -490,34 +493,56 @@ IF ANY ANSWER IS NO → FIX BEFORE RETURNING.
 Use \\n for single line breaks and \\n\\n to separate sections. PLAIN TEXT ONLY.
 UPPERCASE words MUST have correct Portuguese accents: EXPERIÊNCIA, FORMAÇÃO, COMPETÊNCIAS, CERTIFICAÇÕES, GESTÃO, ATUAÇÃO, ANÁLISE, TÉCNICAS, LIDERANÇA.
 
+LANGUAGE RULE (MANDATORY): The optimizedResume MUST be written in Brazilian Portuguese. Only internationally-adopted English terms (CRM, pipeline, SDR, BDR, B2B, SaaS, KPI, etc.) may remain in English. ALL section headers, bullet points, summary, and descriptions MUST be in Portuguese.
+
+HEADER FORMAT (CRITICAL — ATS-SAFE):
+Line 1: Full name only — nothing else on this line
+Line 2: Professional title that mirrors the job title (short, no pipes, no extra info)
+Line 3: City, State | Phone | Email | LinkedIn (ALL contact info on ONE SINGLE LINE, pipe-separated)
+BLANK LINE
+RESUMO PROFISSIONAL
+
+WRONG HEADER (DO NOT DO THIS):
+Felipe Leone
+Headhunter & Recruiter | Talent Acquisition | B2B Sales
+São Paulo, Brazil
++55 11 99446-5011
+felipe_leone@yahoo.com.br
+linkedin.com/in/felipe-leone
+
+CORRECT HEADER (ALWAYS DO THIS):
+Felipe Leone
+SDR | Business Development Representative
+São Paulo, SP | +55 11 99446-5011 | felipe_leone@yahoo.com.br | linkedin.com/in/felipe-leone
+
 Mandatory structure:
 [Full Name]
-[Professional Title that mirrors the job] | [City, State]
-[Phone] | [Email] | [LinkedIn if present in original]
+[Professional Title that mirrors the job — concise, no pipes]
+[City, State] | [Phone] | [Email] | [LinkedIn URL]
 
 RESUMO PROFISSIONAL
 [3-5 line paragraph: area + seniority + critical JD keywords + real differentiator + most relevant achievement from original]
 
 COMPETÊNCIAS PRINCIPAIS
 
-[CATEGORY 1 IN UPPERCASE WITH ACCENTS]
-- Competency with job keyword
-- Competency with synonym/variation
+[CATEGORIA EM MAIÚSCULAS COM ACENTOS]
+- Competência com keyword da vaga
+- Competência com sinônimo/variação
 
 EXPERIÊNCIA PROFISSIONAL
 
-[EXACT job title] | [EXACT company] | [EXACT period from ORIGINAL]
-- Strong verb + action + scale + quantified result
-- Strong verb + ATS keyword + impact
+[CARGO EXATO] | [EMPRESA EXATA] | [PERÍODO EXATO DO ORIGINAL]
+- Verbo de ação forte + ação + escala + resultado quantificado
+- Verbo de ação forte + keyword ATS + impacto
 
 FORMAÇÃO ACADÊMICA
-[Course] | [Institution] | [EXACT year from original]
+[Curso] | [Instituição] | [Ano EXATO do original]
 
 IDIOMAS
-[Language]: [Level]
+[Idioma]: [Nível]
 
-CERTIFICAÇÕES (if applicable)
-[Certification] | [Institution] | [EXACT year from original]
+CERTIFICAÇÕES (se aplicável)
+[Certificação] | [Instituição] | [Ano EXATO do original]
 
 Respond ONLY with valid JSON, no markdown, no text outside JSON.`;
 
@@ -576,6 +601,14 @@ export const resumeRouter = router({
 
       let jobContent = jobUrl.trim();
       let scrapedSuccessfully = false;
+      const isLinkedIn = isUrl(jobUrl.trim()) && new URL(jobUrl.trim()).hostname.includes("linkedin.com");
+
+      // LinkedIn blocks all server-side scraping — fail fast with a clear user-facing error
+      if (isLinkedIn) {
+        throw new Error(
+          "LinkedIn não permite leitura automática de vagas. Por favor, abra a vaga no LinkedIn, copie toda a descrição e cole aqui no lugar do link."
+        );
+      }
 
       if (isUrl(jobUrl.trim())) {
         const scraped = await scrapeJobUrl(jobUrl.trim());
@@ -726,15 +759,16 @@ JSON structure:
         finalProjectedScore = Math.min(100, finalMatchScore + minGain);
       }
 
-      // Enforce atsScore integrity (weighted average)
+      // Enforce atsScore integrity
+      // Components are designed to sum to 100 (max: 20+25+20+15+10+10=100) — direct sum
       const sb = validated.atsScoreBreakdown;
       const computedAts = Math.round(
-        sb.parsing * 0.20 +
-        sb.keywordMatch * 0.25 +
-        sb.experienceQuality * 0.20 +
-        sb.impactMetrics * 0.15 +
-        sb.formatting * 0.10 +
-        sb.skillsAlignment * 0.10
+        sb.parsing +
+        sb.keywordMatch +
+        sb.experienceQuality +
+        sb.impactMetrics +
+        sb.formatting +
+        sb.skillsAlignment
       );
       const finalAtsScore = Math.min(100, Math.max(0, computedAts));
 
