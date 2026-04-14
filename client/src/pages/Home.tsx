@@ -24,6 +24,12 @@ interface JobListing {
   source: string;
   description: string;
   matchReason: string;
+  applicantCount?: number;
+  numVacancies?: number;
+  publishedAt?: string;
+  expiresAt?: string;
+  workType?: string;
+  isReal?: boolean;
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -67,6 +73,26 @@ interface AnalysisResult {
   seniorityLevel?: string;
   careerTrajectory?: string;
   formattingIssues?: string[];
+  // NEW: Competitive Intelligence
+  competitiveEdges?: string[];
+  competitiveRisks?: string[];
+  // NEW: Salary Intelligence
+  salaryRange?: {
+    cltMin: number; cltMax: number;
+    pjMin: number; pjMax: number;
+    currency: string;
+    confidence: "high" | "medium" | "low";
+    rationale: string;
+  };
+  negotiationTips?: string[];
+  // NEW: Recruiter Profile
+  recruiterProfile?: {
+    companyType: string;
+    cultureSignals: string;
+    recruiterFears: string[];
+    recruiterTriggers: string[];
+    idealNarrative: string;
+  };
 }
 
 interface SavedCV {
@@ -537,13 +563,16 @@ export default function Home() {
   });
 
   const searchJobsMutation = trpc.jobs.search.useMutation({
-    onSuccess: (data: { jobs: JobListing[]; totalFound: number }) => {
+    onSuccess: (data: { jobs: JobListing[]; totalFound: number; realJobsFound?: number }) => {
       setJobListings(data.jobs);
       setIsSearchingJobs(false);
       if (data.jobs.length === 0) {
         toast.info("Nenhuma vaga encontrada. Tente novamente em instantes.");
       } else {
-        toast.success(`${data.jobs.length} vagas aderentes encontradas!`);
+        const real = data.realJobsFound ?? 0;
+        toast.success(real > 0
+          ? `${data.jobs.length} vagas encontradas — ${real} vagas reais da Gupy/Vagas.com.br`
+          : `${data.jobs.length} vagas encontradas`);
       }
     },
     onError: () => {
@@ -664,6 +693,7 @@ export default function Home() {
       jobArea: results.jobArea || "Geral",
       keywords: results.keywords || [],
       location: "Brasil",
+      seniorityLevel: results.seniorityLevel || "Pleno",
     });
   };
 
@@ -1462,6 +1492,177 @@ export default function Home() {
               </Card>
             )}
 
+            {/* ── COMPETITIVE INTELLIGENCE ───────────────────────────────── */}
+            {(results.competitiveEdges?.length || results.competitiveRisks?.length) && (
+              <Card className={`p-8 border-2 ${isDarkMode ? "bg-slate-800 border-slate-700" : "border-indigo-100 bg-gradient-to-br from-indigo-50/40 to-white"}`}>
+                <div className="flex items-start gap-4 mb-6">
+                  <div className="w-12 h-12 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                    <TrendingUp className="w-6 h-6 text-indigo-700" />
+                  </div>
+                  <div>
+                    <h3 className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>Inteligência Competitiva</h3>
+                    <p className={`text-sm mt-0.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Como você se posiciona vs. o pool de candidatos desta vaga</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {results.competitiveEdges && results.competitiveEdges.length > 0 && (
+                    <div className={`rounded-xl p-5 border ${isDarkMode ? "bg-emerald-900/20 border-emerald-700/40" : "bg-emerald-50 border-emerald-200"}`}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                        <span className={`text-xs font-bold uppercase tracking-wider ${isDarkMode ? "text-emerald-400" : "text-emerald-700"}`}>Seus diferenciais competitivos</span>
+                      </div>
+                      <ul className="space-y-2">
+                        {results.competitiveEdges.map((edge, i) => (
+                          <li key={i} className={`text-sm leading-relaxed flex gap-2 ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
+                            <span className="text-emerald-500 mt-0.5 flex-shrink-0">▸</span>{edge}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {results.competitiveRisks && results.competitiveRisks.length > 0 && (
+                    <div className={`rounded-xl p-5 border ${isDarkMode ? "bg-amber-900/20 border-amber-700/40" : "bg-amber-50 border-amber-200"}`}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                        <span className={`text-xs font-bold uppercase tracking-wider ${isDarkMode ? "text-amber-400" : "text-amber-700"}`}>Riscos competitivos</span>
+                      </div>
+                      <ul className="space-y-2">
+                        {results.competitiveRisks.map((risk, i) => (
+                          <li key={i} className={`text-sm leading-relaxed flex gap-2 ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
+                            <span className="text-amber-500 mt-0.5 flex-shrink-0">▸</span>{risk}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            )}
+
+            {/* ── SALARY INTELLIGENCE ────────────────────────────────────── */}
+            {results.salaryRange && (
+              <Card className={`p-8 border-2 ${isDarkMode ? "bg-slate-800 border-slate-700" : "border-violet-100 bg-gradient-to-br from-violet-50/40 to-white"}`}>
+                <div className="flex items-start gap-4 mb-6">
+                  <div className="w-12 h-12 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
+                    <ArrowUpRight className="w-6 h-6 text-violet-700" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <h3 className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>Inteligência Salarial</h3>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                        results.salaryRange.confidence === "high"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : results.salaryRange.confidence === "medium"
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-slate-100 text-slate-600"
+                      }`}>
+                        Confiança: {results.salaryRange.confidence === "high" ? "Alta" : results.salaryRange.confidence === "medium" ? "Média" : "Baixa"}
+                      </span>
+                    </div>
+                    <p className={`text-sm mt-0.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Faixas estimadas para o mercado brasileiro · {new Date().getFullYear()}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+                  <div className={`rounded-xl p-5 border ${isDarkMode ? "bg-slate-700/60 border-slate-600" : "bg-white border-violet-200"}`}>
+                    <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${isDarkMode ? "text-violet-400" : "text-violet-600"}`}>CLT (com benefícios)</p>
+                    <p className={`text-2xl font-black ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+                      R$ {results.salaryRange.cltMin.toLocaleString("pt-BR")}
+                      <span className={`text-base font-normal mx-1 ${isDarkMode ? "text-slate-400" : "text-slate-400"}`}>–</span>
+                      R$ {results.salaryRange.cltMax.toLocaleString("pt-BR")}
+                    </p>
+                    <p className={`text-xs mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>bruto mensal</p>
+                  </div>
+                  <div className={`rounded-xl p-5 border ${isDarkMode ? "bg-slate-700/60 border-slate-600" : "bg-white border-violet-200"}`}>
+                    <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${isDarkMode ? "text-violet-400" : "text-violet-600"}`}>PJ (sem benefícios)</p>
+                    <p className={`text-2xl font-black ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+                      R$ {results.salaryRange.pjMin.toLocaleString("pt-BR")}
+                      <span className={`text-base font-normal mx-1 ${isDarkMode ? "text-slate-400" : "text-slate-400"}`}>–</span>
+                      R$ {results.salaryRange.pjMax.toLocaleString("pt-BR")}
+                    </p>
+                    <p className={`text-xs mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>bruto mensal</p>
+                  </div>
+                </div>
+                <p className={`text-sm leading-relaxed mb-5 p-4 rounded-lg ${isDarkMode ? "bg-slate-700/40 text-slate-300" : "bg-violet-50/60 text-slate-600"}`}>
+                  {results.salaryRange.rationale}
+                </p>
+                {results.negotiationTips && results.negotiationTips.length > 0 && (
+                  <div>
+                    <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${isDarkMode ? "text-violet-400" : "text-violet-700"}`}>Dicas de negociação para seu perfil</p>
+                    <ul className="space-y-2">
+                      {results.negotiationTips.map((tip, i) => (
+                        <li key={i} className={`text-sm leading-relaxed flex gap-2 ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
+                          <span className="text-violet-500 font-bold flex-shrink-0">{i + 1}.</span>{tip}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* ── RECRUITER PSYCHOLOGICAL PROFILE ────────────────────────── */}
+            {results.recruiterProfile && (
+              <Card className={`p-8 border-2 ${isDarkMode ? "bg-slate-800 border-slate-700" : "border-rose-100 bg-gradient-to-br from-rose-50/30 to-white"}`}>
+                <div className="flex items-start gap-4 mb-6">
+                  <div className="w-12 h-12 rounded-lg bg-rose-100 flex items-center justify-center flex-shrink-0">
+                    <User className="w-6 h-6 text-rose-700" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <h3 className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>Perfil do Recrutador</h3>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${isDarkMode ? "bg-rose-900/40 text-rose-300" : "bg-rose-100 text-rose-700"}`}>
+                        {results.recruiterProfile.companyType}
+                      </span>
+                    </div>
+                    <p className={`text-sm mt-0.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>O que o recrutador pensa, teme e quer ouvir</p>
+                  </div>
+                </div>
+
+                {/* Culture signals */}
+                <div className={`rounded-xl p-4 mb-4 ${isDarkMode ? "bg-slate-700/40" : "bg-slate-50"}`}>
+                  <p className={`text-xs font-bold uppercase tracking-wider mb-2 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Sinais de cultura da empresa</p>
+                  <p className={`text-sm leading-relaxed ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>{results.recruiterProfile.cultureSignals}</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  {results.recruiterProfile.recruiterFears.length > 0 && (
+                    <div className={`rounded-xl p-4 border ${isDarkMode ? "bg-red-900/20 border-red-700/30" : "bg-red-50 border-red-200"}`}>
+                      <p className={`text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${isDarkMode ? "text-red-400" : "text-red-700"}`}>
+                        <AlertTriangle className="w-3.5 h-3.5" /> O que o recrutador teme
+                      </p>
+                      <ul className="space-y-1.5">
+                        {results.recruiterProfile.recruiterFears.map((fear, i) => (
+                          <li key={i} className={`text-sm leading-relaxed flex gap-2 ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
+                            <span className="text-red-400 flex-shrink-0 mt-0.5">✕</span>{fear}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {results.recruiterProfile.recruiterTriggers.length > 0 && (
+                    <div className={`rounded-xl p-4 border ${isDarkMode ? "bg-emerald-900/20 border-emerald-700/30" : "bg-emerald-50 border-emerald-200"}`}>
+                      <p className={`text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5 ${isDarkMode ? "text-emerald-400" : "text-emerald-700"}`}>
+                        <Zap className="w-3.5 h-3.5" /> O que aciona o "vou ligar agora"
+                      </p>
+                      <ul className="space-y-1.5">
+                        {results.recruiterProfile.recruiterTriggers.map((trigger, i) => (
+                          <li key={i} className={`text-sm leading-relaxed flex gap-2 ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>
+                            <span className="text-emerald-500 flex-shrink-0 mt-0.5">✓</span>{trigger}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+                {/* Ideal narrative */}
+                <div className={`rounded-xl p-4 border-l-4 ${isDarkMode ? "bg-slate-700/40 border-rose-500" : "bg-rose-50/60 border-rose-400"}`}>
+                  <p className={`text-xs font-bold uppercase tracking-wider mb-2 ${isDarkMode ? "text-rose-400" : "text-rose-700"}`}>A narrativa ideal para este recrutador</p>
+                  <p className={`text-sm leading-relaxed italic ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>"{results.recruiterProfile.idealNarrative}"</p>
+                </div>
+              </Card>
+            )}
+
             {/* Vagas Aderentes */}
             <Card className={`p-8 border-2 ${isDarkMode ? "bg-slate-800 border-slate-700" : "border-slate-200"}`}>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
@@ -1512,13 +1713,31 @@ export default function Home() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
                             <h4 className={`font-semibold text-sm ${isDarkMode ? "text-white" : "text-slate-900"}`}>{job.title}</h4>
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isDarkMode ? "bg-blue-900/50 text-blue-300" : "bg-blue-100 text-blue-700"}`}>{job.source}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                              job.source === "Gupy"
+                                ? isDarkMode ? "bg-green-900/50 text-green-300" : "bg-green-100 text-green-700"
+                                : job.source === "LinkedIn"
+                                  ? isDarkMode ? "bg-blue-900/50 text-blue-300" : "bg-blue-100 text-blue-700"
+                                  : job.source === "Vagas.com.br"
+                                    ? isDarkMode ? "bg-orange-900/50 text-orange-300" : "bg-orange-100 text-orange-700"
+                                    : isDarkMode ? "bg-slate-600 text-slate-300" : "bg-slate-100 text-slate-600"
+                            }`}>{job.source}</span>
+                            {job.isReal && (
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isDarkMode ? "bg-emerald-900/30 text-emerald-400" : "bg-emerald-50 text-emerald-600"}`}>
+                                Vaga real
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
                             {job.company && <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{job.company}</span>}
                             {job.location && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{job.location}</span>}
+                            {job.publishedAt && <span className="text-slate-400">Publicada {job.publishedAt}</span>}
                           </div>
-                          {job.matchReason && <p className={`text-xs mt-2 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>{job.matchReason}</p>}
+                          {job.matchReason && (
+                            <p className={`text-xs mt-2 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                              {job.matchReason}
+                            </p>
+                          )}
                         </div>
                         <ExternalLink className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
                       </div>
