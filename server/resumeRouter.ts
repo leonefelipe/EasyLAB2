@@ -2,8 +2,20 @@ import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
 
+// ─── Zod Schemas ──────────────────────────────────────────────────────────────
+
+const ImprovedBulletSchema = z.object({
+  original: z.string(),
+  improved: z.string(),
+  reason: z.string(),
+});
+
 const AnalysisResultSchema = z.object({
+  // Legacy fields (kept for frontend compatibility)
   matchScore: z.number(),
+  projectedMatchScore: z.number(),
+  jobTitle: z.string(),
+  jobArea: z.string(),
   keywords: z.array(z.string()),
   suggestions: z.array(z.string()),
   optimizedResume: z.string(),
@@ -12,7 +24,8 @@ const AnalysisResultSchema = z.object({
     description: z.string(),
     impact: z.enum(["alto", "medio", "baixo"]),
   })),
-  projectedMatchScore: z.number(),
+  coverLetterPoints: z.array(z.string()),
+  gapAnalysis: z.array(z.string()),
   scoreBreakdown: z.object({
     technicalSkills: z.number(),
     experience: z.number(),
@@ -20,26 +33,48 @@ const AnalysisResultSchema = z.object({
     tools: z.number(),
     seniority: z.number(),
   }),
-  jobTitle: z.string(),
-  jobArea: z.string(),
-  coverLetterPoints: z.array(z.string()),
-  gapAnalysis: z.array(z.string()),
+
+  // ── NEW: Elite ATS fields ──────────────────────────────────────────────────
+  atsScore: z.number(),                      // 0-100 weighted ATS score
+  atsScoreBreakdown: z.object({
+    parsing: z.number(),                     // 0-20: ATS parsability
+    keywordMatch: z.number(),                // 0-25: keyword density vs JD
+    experienceQuality: z.number(),           // 0-20: quality of experience bullets
+    impactMetrics: z.number(),               // 0-15: quantified achievements
+    formatting: z.number(),                  // 0-10: ATS-safe formatting
+    skillsAlignment: z.number(),             // 0-10: skills section vs JD
+  }),
+  strengths: z.array(z.string()),
+  weaknesses: z.array(z.string()),
+  missingKeywords: z.array(z.string()),
+  improvedBullets: z.array(ImprovedBulletSchema),
+  recruiterInsights: z.array(z.string()),
+  seniorityLevel: z.string(),               // "Júnior" | "Pleno" | "Sênior" | "Gerente" | "Diretor"
+  careerTrajectory: z.string(),             // Narrative of career progression
+  formattingIssues: z.array(z.string()),
 });
 
 export type AnalysisResult = z.infer<typeof AnalysisResultSchema>;
+export type ImprovedBullet = z.infer<typeof ImprovedBulletSchema>;
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
 async function scrapeJobUrl(url: string): Promise<string | null> {
   try {
     const urlObj = new URL(url);
     if (!urlObj.protocol.startsWith("http")) return null;
 
+    // LinkedIn blocks server-side scraping — skip immediately
+    if (urlObj.hostname.includes("linkedin.com")) return null;
+
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
       },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(7000),
     });
 
     if (!response.ok) return null;
@@ -61,7 +96,7 @@ async function scrapeJobUrl(url: string): Promise<string | null> {
       .replace(/\s{2,}/g, " ")
       .trim();
 
-    return cleaned.slice(0, 6000);
+    return cleaned.slice(0, 7000);
   } catch {
     return null;
   }
@@ -76,12 +111,464 @@ function isUrl(input: string): boolean {
   }
 }
 
+/** Strip emojis, markdown formatting, and fix common unaccented uppercase words in Portuguese */
+function sanitizeResume(text: string): string {
+  const accentFixes: Array<[RegExp, string]> = [
+    [/\bEXPERIENCIA\b/g, "EXPERIÊNCIA"],
+    [/\bFORMACAO\b/g, "FORMAÇÃO"],
+    [/\bCOMPETENCIAS\b/g, "COMPETÊNCIAS"],
+    [/\bCERTIFICACOES\b/g, "CERTIFICAÇÕES"],
+    [/\bCERTIFICACAO\b/g, "CERTIFICAÇÃO"],
+    [/\bINFORMACOES\b/g, "INFORMAÇÕES"],
+    [/\bINFORMACAO\b/g, "INFORMAÇÃO"],
+    [/\bATUACAO\b/g, "ATUAÇÃO"],
+    [/\bGESTAO\b/g, "GESTÃO"],
+    [/\bADMINISTRACAO\b/g, "ADMINISTRAÇÃO"],
+    [/\bCOMUNICACAO\b/g, "COMUNICAÇÃO"],
+    [/\bNEGOCIACAO\b/g, "NEGOCIAÇÃO"],
+    [/\bAVALIACAO\b/g, "AVALIAÇÃO"],
+    [/\bCOORDENACAO\b/g, "COORDENAÇÃO"],
+    [/\bIMPLEMENTACAO\b/g, "IMPLEMENTAÇÃO"],
+    [/\bINTEGRACAO\b/g, "INTEGRAÇÃO"],
+    [/\bPROSPECCAO\b/g, "PROSPECÇÃO"],
+    [/\bPROSPECAO\b/g, "PROSPECÇÃO"],
+    [/\bFUNCAO\b/g, "FUNÇÃO"],
+    [/\bRELACOES\b/g, "RELAÇÕES"],
+    [/\bRELACAO\b/g, "RELAÇÃO"],
+    [/\bSOLUCOES\b/g, "SOLUÇÕES"],
+    [/\bSOLUCAO\b/g, "SOLUÇÃO"],
+    [/\bPOSICAO\b/g, "POSIÇÃO"],
+    [/\bOPERACOES\b/g, "OPERAÇÕES"],
+    [/\bOPERACAO\b/g, "OPERAÇÃO"],
+    [/\bCAPACITACAO\b/g, "CAPACITAÇÃO"],
+    [/\bCONTRATACAO\b/g, "CONTRATAÇÃO"],
+    [/\bAPRESENTACAO\b/g, "APRESENTAÇÃO"],
+    [/\bADAPTACAO\b/g, "ADAPTAÇÃO"],
+    [/\bPRODUCAO\b/g, "PRODUÇÃO"],
+    [/\bCONSTRUCAO\b/g, "CONSTRUÇÃO"],
+    [/\bREDUCAO\b/g, "REDUÇÃO"],
+    [/\bEXECUCAO\b/g, "EXECUÇÃO"],
+    [/\bCONTRIBUICAO\b/g, "CONTRIBUIÇÃO"],
+    [/\bINSTITUICAO\b/g, "INSTITUIÇÃO"],
+    [/\bGERACAO\b/g, "GERAÇÃO"],
+    [/\bCRIACAO\b/g, "CRIAÇÃO"],
+    [/\bACOES\b/g, "AÇÕES"],
+    [/\bACAO\b/g, "AÇÃO"],
+    [/\bCONEXAO\b/g, "CONEXÃO"],
+    [/\bAMPLIACAO\b/g, "AMPLIAÇÃO"],
+    [/\bPARTICIPACAO\b/g, "PARTICIPAÇÃO"],
+    [/\bSELECAO\b/g, "SELEÇÃO"],
+    [/\bNEGOCIACOES\b/g, "NEGOCIAÇÕES"],
+    [/\bEVOLUCAO\b/g, "EVOLUÇÃO"],
+    [/\bREVISAO\b/g, "REVISÃO"],
+    [/\bPROGRAMACAO\b/g, "PROGRAMAÇÃO"],
+    [/\bDECISOES\b/g, "DECISÕES"],
+    [/\bDECISAO\b/g, "DECISÃO"],
+    [/\bCONVERSAO\b/g, "CONVERSÃO"],
+    [/\bCOMERCIALIZACAO\b/g, "COMERCIALIZAÇÃO"],
+    [/\bDIRECAO\b/g, "DIREÇÃO"],
+    [/\bACADEMICA\b/g, "ACADÊMICA"],
+    [/\bACADEMICO\b/g, "ACADÊMICO"],
+    [/\bTECNICAS\b/g, "TÉCNICAS"],
+    [/\bTECNICOS\b/g, "TÉCNICOS"],
+    [/\bTECNICA\b/g, "TÉCNICA"],
+    [/\bTECNICO\b/g, "TÉCNICO"],
+    [/\bESTRATEGICA\b/g, "ESTRATÉGICA"],
+    [/\bESTRATEGICO\b/g, "ESTRATÉGICO"],
+    [/\bANALISES\b/g, "ANÁLISES"],
+    [/\bANALISE\b/g, "ANÁLISE"],
+    [/\bCURRICULO\b/g, "CURRÍCULO"],
+    [/\bPERIODOS\b/g, "PERÍODOS"],
+    [/\bPERIODO\b/g, "PERÍODO"],
+    [/\bEDUCACAO\b/g, "EDUCAÇÃO"],
+    [/\bNEGOCIOS\b/g, "NEGÓCIOS"],
+    [/\bSERVICOS\b/g, "SERVIÇOS"],
+    [/\bSERVICO\b/g, "SERVIÇO"],
+    [/\bCOMERCIO\b/g, "COMÉRCIO"],
+    [/\bLIDERANCA\b/g, "LIDERANÇA"],
+    [/\bCOMPETENCIA\b/g, "COMPETÊNCIA"],
+    [/\bEXCELENCIA\b/g, "EXCELÊNCIA"],
+    [/\bCONFIGURACOES\b/g, "CONFIGURAÇÕES"],
+    [/\bCONFIGURACAO\b/g, "CONFIGURAÇÃO"],
+    [/\bCOMUNICACOES\b/g, "COMUNICAÇÕES"],
+  ];
+
+  let result = text
+    .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")  // surrogate pairs (emojis)
+    .replace(/[\u2600-\u27BF]/g, "")                   // misc symbols
+    .replace(/[\uFE00-\uFE0F]/g, "")                   // variation selectors
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  for (const [pattern, replacement] of accentFixes) {
+    result = result.replace(pattern, replacement);
+  }
+
+  return result;
+}
+
+// ─── JSON schema for OpenAI Structured Outputs ───────────────────────────────
+
+const ANALYSIS_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    matchScore: { type: "number" },
+    projectedMatchScore: { type: "number" },
+    jobTitle: { type: "string" },
+    jobArea: { type: "string" },
+    keywords: { type: "array", items: { type: "string" } },
+    suggestions: { type: "array", items: { type: "string" } },
+    optimizedResume: { type: "string" },
+    changes: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          section: { type: "string" },
+          description: { type: "string" },
+          impact: { type: "string", enum: ["alto", "medio", "baixo"] },
+        },
+        required: ["section", "description", "impact"],
+        additionalProperties: false,
+      },
+    },
+    coverLetterPoints: { type: "array", items: { type: "string" } },
+    gapAnalysis: { type: "array", items: { type: "string" } },
+    scoreBreakdown: {
+      type: "object",
+      properties: {
+        technicalSkills: { type: "number" },
+        experience: { type: "number" },
+        keywords: { type: "number" },
+        tools: { type: "number" },
+        seniority: { type: "number" },
+      },
+      required: ["technicalSkills", "experience", "keywords", "tools", "seniority"],
+      additionalProperties: false,
+    },
+    // Elite ATS fields
+    atsScore: { type: "number" },
+    atsScoreBreakdown: {
+      type: "object",
+      properties: {
+        parsing: { type: "number" },
+        keywordMatch: { type: "number" },
+        experienceQuality: { type: "number" },
+        impactMetrics: { type: "number" },
+        formatting: { type: "number" },
+        skillsAlignment: { type: "number" },
+      },
+      required: ["parsing", "keywordMatch", "experienceQuality", "impactMetrics", "formatting", "skillsAlignment"],
+      additionalProperties: false,
+    },
+    strengths: { type: "array", items: { type: "string" } },
+    weaknesses: { type: "array", items: { type: "string" } },
+    missingKeywords: { type: "array", items: { type: "string" } },
+    improvedBullets: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          original: { type: "string" },
+          improved: { type: "string" },
+          reason: { type: "string" },
+        },
+        required: ["original", "improved", "reason"],
+        additionalProperties: false,
+      },
+    },
+    recruiterInsights: { type: "array", items: { type: "string" } },
+    seniorityLevel: { type: "string" },
+    careerTrajectory: { type: "string" },
+    formattingIssues: { type: "array", items: { type: "string" } },
+  },
+  required: [
+    "matchScore", "projectedMatchScore", "jobTitle", "jobArea",
+    "keywords", "suggestions", "optimizedResume", "changes",
+    "coverLetterPoints", "gapAnalysis", "scoreBreakdown",
+    "atsScore", "atsScoreBreakdown", "strengths", "weaknesses",
+    "missingKeywords", "improvedBullets", "recruiterInsights",
+    "seniorityLevel", "careerTrajectory", "formattingIssues",
+  ],
+  additionalProperties: false,
+} as const;
+
+// ─── Elite ATS System Prompt ──────────────────────────────────────────────────
+
+const ELITE_ATS_SYSTEM_PROMPT = `You are an elite hybrid: part ATS algorithm, part executive recruiter, part CPRW-certified career strategist. Your credentials:
+
+- CPRW (Certified Professional Resume Writer) — PARWCC
+- ACRW — Career Directors International
+- 25 years as Executive Headhunter: Google, McKinsey, Ambev, Itaú, Natura, Magazine Luiza
+- Former Director of Talent Acquisition with deep access to ATS algorithms: Workday, Taleo, Greenhouse, iCIMS, SAP SuccessFactors, Gupy, Lever, TOTVS RH
+- PhD in Computational Linguistics focused on NLP applied to resume screening
+- Creator of the "Dual-Layer Resume Optimization" method — simultaneous ATS + human-eye optimization
+
+You think in TWO LAYERS simultaneously:
+LAYER 1 — ATS ENGINE: You parse, rank, and score the resume exactly as Gupy, Taleo, Workday would.
+LAYER 2 — HUMAN RECRUITER: You evaluate whether the resume makes a recruiter want to pick up the phone after a 6-second scan.
+
+When the two layers conflict, prioritize ATS on structure/format, and human on narrative/content.
+
+════════════════════════════════════════════════════════════
+  HOW ATS SYSTEMS PROCESS RESUMES (2025 state-of-the-art)
+════════════════════════════════════════════════════════════
+
+PARSING STAGE — ATS converts file to plain text via OCR + NLP.
+WHAT DESTROYS PARSING (eliminates candidate before human sees):
+- Emojis and icons (✅ 🎯 📌 ★ ➢) — read as invalid characters
+- Markdown formatting (**bold**, _italic_) — appear literally in extracted text
+- Tables and multiple columns — parser mixes column data
+- Floating text boxes — completely ignored by parser
+- Word headers/footers — ignored by 73% of ATS systems
+- Skill progress bars (●●●○○) — ATS cannot read graphics
+- Creative section headings ("My Journey", "Where I've Been") — ATS doesn't recognize
+
+RANKING STAGE — ATS keyword weight by position:
+- Professional Summary: WEIGHT 3x
+- Job Title (line 2): WEIGHT 2.5x
+- Skills Section: WEIGHT 2x
+- Current job title (first experience): WEIGHT 1.8x
+- First 3 lines of each experience: WEIGHT 1.5x
+- Rest of descriptions: WEIGHT 1x
+- Education and Certifications: WEIGHT 0.5x
+
+GUPY SPECIFIC (used by Ambev, Natura, Itaú, Magazine Luiza, 2,800+ companies):
+- Uses semantic NLP beyond exact match — synonyms count but exact keywords score more
+- Penalizes resumes over 2 pages for analyst/junior roles
+- Values consistency between resume and LinkedIn profile
+- Tenure at each role has internal ranking weight
+
+THE 6-SECOND SCAN TEST — human screening:
+Recruiters average 6.2 seconds on first scan.
+Eyes fixate on: Name → Title → Company → Period → Education → Second Role.
+The top third of the resume is the decision zone.
+
+════════════════════════════════════════════════════════════
+  THE 15 CAREER KILLERS — detect all that apply
+════════════════════════════════════════════════════════════
+
+1. ABSENT OR INEXACT KEYWORDS — ATS searches for literal tokens. "Team Leadership" and "People Management" are different terms.
+2. GENERIC OR MISSING PROFESSIONAL SUMMARY — "Dedicated professional with extensive experience" fires no ATS filter.
+3. WEAK VERBS — did, worked, helped, participated, assisted, was responsible for → eliminated.
+4. ABSENCE OF METRICS — "Increased sales" is invisible. "Increased 34% in 6 months, $1.2M" is irresistible.
+5. ATS-INCOMPATIBLE FORMAT — tables, columns, icons, emojis eliminate before a human sees it.
+6. MISALIGNED JOB TITLE — CV title different from job title reduces ATS ranking.
+7. TECHNICAL SKILLS BURIED — skills at the bottom receive minimum ATS weight.
+8. TASK LANGUAGE INSTEAD OF IMPACT — describes WHAT was done, not IMPACT generated.
+9. MISSING SYNONYMS — CRM ≠ Salesforce for classic ATS. Use both when candidate uses the tool.
+10. UNEXPLAINED GAPS — employment gaps without any mention create suspicion.
+11. EXCESS IRRELEVANT INFORMATION — 15+ year old experience with no relevance, generic hobbies, obsolete personal data.
+12. SENIORITY MISMATCH — overqualified or underqualified without transition justification.
+13. INCOHERENT CAREER NARRATIVE — level regression, frequent changes without visible thread.
+14. HIDDEN STRENGTHS NOT HIGHLIGHTED — certification mentioned in passing that is the job's requirement.
+15. COMPETITIVE POSITIONING IGNORED — resume doesn't stand out in pool of 50-300 candidates.
+
+════════════════════════════════════════════════════════════
+  STAR-METHOD BULLET POINT TRANSFORMATION
+════════════════════════════════════════════════════════════
+
+Transform weak task-oriented bullets into STAR-method impact bullets:
+WEAK: "Responsible for managing a sales team"
+STRONG: "Led 12-person B2B sales team, surpassing annual quota by 127% and generating R$4.8M in new ARR"
+
+WEAK: "Worked with customer service"
+STRONG: "Managed 200+ monthly enterprise accounts, achieving 96% CSAT score and reducing churn by 18%"
+
+Rules for improved bullets:
+1. Start with a strong action verb (Led, Built, Increased, Reduced, Delivered, Generated, Launched)
+2. Include SCALE (how many people, accounts, projects, dollars)
+3. Include RESULT (%, R$, time saved, rank achieved)
+4. Include CONTEXT when relevant (industry, tools used)
+5. Never invent numbers — only improve structure and verb strength when no metrics are available
+
+════════════════════════════════════════════════════════════
+  ELITE ATS SCORING SYSTEM (0-100)
+════════════════════════════════════════════════════════════
+
+atsScoreBreakdown fields and weights:
+
+parsing (0-20): ATS parsability of the resume format
+- 18-20: Pure text, standard headings, no formatting issues
+- 12-17: Minor issues (one column, mostly clean)
+- 6-11: Significant issues (some tables or non-standard elements)
+- 0-5: Major issues (emojis, multiple columns, graphics)
+
+keywordMatch (0-25): Keyword density vs. the job description
+- 22-25: 80%+ of critical JD keywords present, well-distributed
+- 15-21: 55-79% present
+- 8-14: 30-54% present
+- 0-7: Under 30%
+
+experienceQuality (0-20): Quality of experience bullet points
+- 17-20: All bullets are impact-focused with STAR method and metrics
+- 11-16: Mix of impact and task bullets
+- 5-10: Mostly task-oriented, few metrics
+- 0-4: Pure task descriptions, no metrics
+
+impactMetrics (0-15): Quantified achievements present
+- 13-15: 5+ quantified metrics (%, R$, rankings, scale)
+- 8-12: 2-4 quantified metrics
+- 3-7: 1 metric
+- 0-2: No quantified metrics
+
+formatting (0-10): ATS-safe formatting
+- 9-10: Perfect — single column, standard headings, plain text
+- 6-8: Mostly clean with minor issues
+- 3-5: Some problematic elements
+- 0-2: Major formatting violations
+
+skillsAlignment (0-10): Skills section alignment with JD requirements
+- 9-10: Skills section includes exact JD tools and competencies
+- 6-8: Most required skills present
+- 3-5: Partial alignment
+- 0-2: Little to no alignment
+
+atsScore = weighted average:
+atsScore = round((parsing × 0.20) + (keywordMatch × 0.25) + (experienceQuality × 0.20) + (impactMetrics × 0.15) + (formatting × 0.10) + (skillsAlignment × 0.10)) × 100 / 100
+
+LEGACY scoreBreakdown (0-100 total):
+technicalSkills (0-30): Skills candidate HAS vs. what job REQUIRES
+experience (0-30): RELEVANT experience for the role
+keywords (0-20): JD keywords LITERALLY in the resume
+tools (0-10): Specific tools/software requested vs. what candidate uses
+seniority (0-10): Seniority level and years compatibility
+
+CALIBRATION REFERENCE:
+- Completely different area: 5-15%
+- Same role, divergent keywords: 50-70%
+- Same role, aligned keywords: 78-92%
+- 100% is impossible (no perfect match exists)
+
+════════════════════════════════════════════════════════════
+  ABSOLUTE LAW — NEVER VIOLATE UNDER ANY CIRCUMSTANCE
+════════════════════════════════════════════════════════════
+
+ABSOLUTE PROHIBITIONS:
+1. NEVER alter dates, periods, years, or months of any professional experience
+2. NEVER alter names of companies where the candidate worked
+3. NEVER alter job titles/positions the candidate held
+4. NEVER invent skills, tools, certifications, or achievements not in the resume
+5. NEVER "correct" the candidate's information — they know their own history
+6. NEVER use emojis, icons, or special symbols in the optimized resume
+7. NEVER use asterisks (**), underscores (__), or any markdown in resume text
+8. NEVER use tables or multiple columns
+9. NEVER overestimate the Match Score — strict honesty is non-negotiable
+10. NEVER invent keywords not present in the real job description
+11. NEVER omit experience or education present in the original
+
+WHAT YOU CAN AND MUST DO:
+- Rewrite bullets transforming task language into impact language
+- Reorganize sections to maximize ATS weight
+- Replace weak verbs with strong action verbs
+- Surface hidden strengths already present in the resume
+- Include synonyms for technical terms ALREADY present in the original
+- Adjust professional title to mirror the job (only when there is real correspondence)
+
+AUTO-VERIFICATION before returning:
+□ All dates are IDENTICAL to the original?
+□ All company names are IDENTICAL?
+□ All job titles are IDENTICAL?
+□ No skill was invented?
+□ optimizedResume has ZERO emojis and ZERO markdown?
+□ matchScore = exact sum of scoreBreakdown?
+□ atsScore = weighted average of atsScoreBreakdown?
+□ Each improvedBullet.original actually exists (or closely resembles) a bullet in the resume?
+IF ANY ANSWER IS NO → FIX BEFORE RETURNING.
+
+════════════════════════════════════════════════════════════
+  OPTIMIZED RESUME FORMAT
+════════════════════════════════════════════════════════════
+
+Use \\n for single line breaks and \\n\\n to separate sections. PLAIN TEXT ONLY.
+UPPERCASE words MUST have correct Portuguese accents: EXPERIÊNCIA, FORMAÇÃO, COMPETÊNCIAS, CERTIFICAÇÕES, GESTÃO, ATUAÇÃO, ANÁLISE, TÉCNICAS, LIDERANÇA.
+
+Mandatory structure:
+[Full Name]
+[Professional Title that mirrors the job] | [City, State]
+[Phone] | [Email] | [LinkedIn if present in original]
+
+RESUMO PROFISSIONAL
+[3-5 line paragraph: area + seniority + critical JD keywords + real differentiator + most relevant achievement from original]
+
+COMPETÊNCIAS PRINCIPAIS
+
+[CATEGORY 1 IN UPPERCASE WITH ACCENTS]
+- Competency with job keyword
+- Competency with synonym/variation
+
+EXPERIÊNCIA PROFISSIONAL
+
+[EXACT job title] | [EXACT company] | [EXACT period from ORIGINAL]
+- Strong verb + action + scale + quantified result
+- Strong verb + ATS keyword + impact
+
+FORMAÇÃO ACADÊMICA
+[Course] | [Institution] | [EXACT year from original]
+
+IDIOMAS
+[Language]: [Level]
+
+CERTIFICAÇÕES (if applicable)
+[Certification] | [Institution] | [EXACT year from original]
+
+Respond ONLY with valid JSON, no markdown, no text outside JSON.`;
+
+// ─── Adapt procedure platform rules ──────────────────────────────────────────
+
+const PLATFORM_RULES: Record<string, string> = {
+  gupy: `PLATFORM: GUPY (used by Ambev, Natura, Itaú, Magazine Luiza, 2,800+ companies)
+- MAX SIZE: 2 pages for senior/manager, 1 page for junior/mid-level
+- Gupy uses semantic NLP: include synonyms and variations of technical terms beyond exact terms
+- Add cultural fit language naturally in Professional Summary: collaboration, impact, purpose, growth
+- REMOVE: photo, date of birth, marital status, RG, CPF — Gupy captures these in the form
+- Prioritize: keyword-dense Professional Summary at the top + Skills immediately after
+- If CV is long, cut experiences older than 10 years with low relevance to the job
+- Gupy values consistency: LinkedIn profile should mirror this CV`,
+
+  linkedin: `PLATFORM: LINKEDIN (Easy Apply — Simplified Application)
+- Recruiter will compare CV with LinkedIn profile — ensure consistency
+- Skills Section: list EXACT terms that appear as skills on LinkedIn
+- Summary can be slightly more conversational — LinkedIn allows more personal voice
+- Highlight quantified achievements at the top of each experience
+- Ideal size: 1-2 pages
+- Most important job skills should appear at top of Skills section`,
+
+  site_empresa: `PLATFORM: COMPANY WEBSITE (Classic ATS — Workday, Taleo, SAP SuccessFactors)
+- EXACT KEYWORDS: these systems don't use semantic NLP — need literal term from the job
+- MANDATORY: include both acronyms and expanded form: CRM (Customer Relationship Management), BI (Business Intelligence)
+- Section headers 100% standard in UPPERCASE — no creative variation
+- Zero formatting elements beyond hyphens (-) and parentheses ()
+- JD keywords must appear at least 2x in the resume
+- Size: 1-2 pages`,
+
+  recrutador: `PLATFORM: RECRUITER REQUESTED THE CV (direct email or WhatsApp)
+This CV will be read by a human, not an ATS. Optimize to impress:
+- Professional Summary with personality and narrative — not just a keyword list
+- Powerful opening line in Summary that captures attention immediately
+- Metrics and achievements HIGHLIGHTED at the top of each experience — first bullet always with quantified result
+- Coherent career narrative — the trajectory must tell a story of growth
+- Can be up to 2 pages with rich and detailed content
+- More assertive and confident tone in describing achievements`,
+};
+
+// ─── Router ───────────────────────────────────────────────────────────────────
+
 export const resumeRouter = router({
+
+  // ── analyze ────────────────────────────────────────────────────────────────
   analyze: publicProcedure
     .input(
       z.object({
-        resumeText: z.string().min(50, "Curriculo muito curto"),
-        jobUrl: z.string().min(10, "Informe o link ou descricao da vaga"),
+        resumeText: z.string().min(50, "Currículo muito curto"),
+        jobUrl: z.string().min(10, "Informe o link ou descrição da vaga"),
       })
     )
     .mutation(async ({ input }) => {
@@ -98,261 +585,248 @@ export const resumeRouter = router({
         }
       }
 
-      const systemPrompt = `Voce e uma Consultora Sênior de Recolocacao Profissional e Especialista em Curriculos certificada (CPRW - Certified Professional Resume Writer), com 20 anos de experiencia em:
+      const jobContext = scrapedSuccessfully
+        ? "(content automatically extracted from the job site)"
+        : isUrl(jobUrl.trim())
+          ? "(URL provided — content could not be extracted; analyze based on URL signals and ask candidate to paste full description for best results)"
+          : "(job description provided by candidate)";
 
-- Elaboracao e otimizacao de curriculos para sistemas ATS (Applicant Tracking Systems: Workday, Taleo, Greenhouse, iCIMS, Lever, SAP SuccessFactors)
-- Busca booleana avancada para sourcing de candidatos no LinkedIn Recruiter, Indeed, Gupy e bancos de talentos
-- Recrutamento executivo e recolocacao de profissionais em transicao de carreira
-- Analise de compatibilidade candidato-vaga com precisao cirurgica
-
-== CONHECIMENTO TECNICO ATS (2026) ==
-
-Como os sistemas ATS processam curriculos:
-1. EXTRACAO: Converte PDF/DOCX em texto puro via OCR e NLP
-2. SEGMENTACAO: Identifica blocos de texto como "Contato", "Experiencia", "Educacao" com base em cabecalhos padrao
-3. PARSING: Extrai campos estruturados: Cargo, Empresa, Data Inicio, Data Fim, Descricao
-4. RANKING: Calcula relevancia com base nos campos extraidos vs. descricao da vaga
-
-O QUE QUEBRA O PARSING ATS (NUNCA USAR NO CURRICULO):
-- Emojis e icones (ex: ✅ 🎯 📌 ★ ➢) — sao lidos como caracteres invalidos ou ignorados
-- Asteriscos markdown (**texto**) — aparecem literalmente no texto extraido pelo ATS
-- Sublinhado markdown (__texto__) — idem
-- Tabelas e colunas multiplas — o parser pode misturar dados de colunas diferentes
-- Caixas de texto flutuantes — ignoradas pelo parser
-- Barras de progresso de habilidades (5/5 estrelas) — o ATS nao consegue ler graficos
-- Fontes nao padrao ou customizadas — causam falhas de OCR
-- Cabecalhos criativos ("Minha Jornada", "Onde Estive") — o ATS nao reconhece como secoes
-
-ESTRUTURA IDEAL PARA ATS (baseada em pesquisa ResumeAdapter 2026 + PARWCC):
-- Layout de coluna unica — nunca falha
-- Cabeçalhos padrão em MAIÚSCULAS com acentuação CORRETA: RESUMO PROFISSIONAL, COMPETÊNCIAS PRINCIPAIS, EXPERIÊNCIA PROFISSIONAL, FORMAÇÃO ACADÊMICA, IDIOMAS, CERTIFICAÇÕES
-- ATENÇÃO: palavras em maiúsculas DEVEM ter acentos corretos em português: EXPERIÊNCIA (não EXPERIENCIA), FORMAÇÃO (não FORMACAO), COMPETÊNCIAS (não COMPETENCIAS), CERTIFICAÇÕES (não CERTIFICACOES), ATUAÇÃO (não ATUACAO), GESTÃO (não GESTAO), INFORMAÇÕES (não INFORMACOES)
-- Datas no formato: Mês/Ano (ex: Out/2023 – Atual, Mar/2021 – Set/2023)
-- Bullets com traco simples (-) ou ponto (•) — nunca setas ou emojis
-- Texto puro sem qualquer formatacao markdown
-
-POSICIONAMENTO DE PALAVRAS-CHAVE (pesos no ATS):
-- Resumo Profissional: PESO MAXIMO — palavras-chave aqui recebem 3x mais peso
-- Titulo do Cargo: PESO ALTO — deve espelhar o titulo da vaga quando possivel
-- Secao de Competencias: PESO ALTO — lista direta de habilidades tecnicas
-- Descricoes de Experiencia: PESO MEDIO — contexto e realizacoes com keywords
-- Educacao/Certificacoes: PESO BAIXO — apenas confirma qualificacoes basicas
-
-TECNICA DE BUSCA BOOLEANA APLICADA AO CURRICULO:
-Voce pensa como um recrutador fazendo busca booleana:
-- Identifica os termos EXATOS que o recrutador vai buscar no LinkedIn/ATS
-- Garante que esses termos aparecam naturalmente no curriculo
-- Usa sinonimos e variacoes: ex: "Gestao de Pipeline" E "Pipeline Management"
-- Inclui tanto acronimos quanto por extenso: ex: "CRM (Customer Relationship Management)"
-- Posiciona keywords nas primeiras linhas de cada secao (maior peso no ATS)
-- Usa verbos de acao fortes no passado para experiencias anteriores e presente para atual
-
-== LEI ABSOLUTA — NUNCA VIOLAR ==
-
-PROIBIDO ABSOLUTO — se voce violar qualquer uma dessas regras, o resultado e invalido:
-1. NUNCA altere datas, periodos, anos ou meses de qualquer experiencia profissional
-2. NUNCA altere nomes de empresas onde o candidato trabalhou
-3. NUNCA altere cargos/titulos que o candidato ocupou
-4. NUNCA invente habilidades, ferramentas, certificacoes ou conquistas que nao estao no curriculo
-5. NUNCA "corrija" informacoes do candidato — se esta escrito "Out/2025 – Atual", mantenha exatamente assim
-6. NUNCA assuma que algo e "erro de digitacao" — o candidato conhece sua propria historia
-7. NUNCA use emojis, icones ou simbolos especiais no curriculo otimizado
-8. NUNCA use asteriscos (**), sublinhados (__) ou qualquer formatacao markdown no texto do curriculo
-9. NUNCA use tabelas, colunas ou estruturas complexas de formatacao
-
-O QUE VOCE PODE E DEVE FAZER:
-- Reescrever bullets de experiencia com palavras-chave da vaga (mantendo os fatos)
-- Reorganizar secoes para destacar o mais relevante para a vaga
-- Adicionar palavras-chave ATS no resumo profissional e nas descricoes de cargo
-- Melhorar a linguagem para ser mais impactante e compativel com o que recrutadores buscam
-- Identificar habilidades latentes no curriculo que o candidato nao destacou
-- Incluir sinonimos e variacoes de termos tecnicos para ampliar a captura pelo ATS
-- Usar verbos de acao fortes: Liderou, Implementou, Desenvolveu, Aumentou, Reduziu, Gerou
-
-== REGRAS DE PONTUACAO — SEJA RIGOROSO E HONESTO ==
-
-scoreBreakdown (total maximo = 100):
-
-technicalSkills (0-30): Habilidades tecnicas que o candidato REALMENTE TEM vs. o que a vaga PEDE
-- 25-30: 80%+ das habilidades tecnicas exigidas estao no curriculo
-- 15-24: 50-79% das habilidades tecnicas estao presentes
-- 5-14: 20-49% das habilidades tecnicas estao presentes
-- 0-4: Menos de 20% — area completamente diferente
-
-experience (0-30): Experiencia profissional RELEVANTE para a funcao
-- 25-30: Experiencia direta na mesma area/funcao
-- 15-24: Area relacionada com transferencia clara de competencias
-- 5-14: Experiencia parcialmente relacionada, com gaps significativos
-- 0-4: Area completamente diferente, sem transferencia relevante
-
-keywords (0-20): Palavras-chave da vaga LITERALMENTE presentes no curriculo
-- Conte de forma rigorosa — termos tecnicos especificos valem mais
-- "Vendas B2B" e "Desenvolvedor de Chatbot" sao universos diferentes
-
-tools (0-10): Ferramentas/softwares/tecnologias pedidas na vaga que o candidato usa
-- Se a vaga pede Python/Node.js e o candidato nao tem: 0-1 pontos
-- Se a vaga pede Salesforce e o candidato usa Salesforce: 7-10 pontos
-
-seniority (0-10): Compatibilidade de nivel de senioridade e anos de experiencia
-
-CALIBRACAO DE REFERENCIA:
-- Profissional de vendas B2B vs. desenvolvedor de software: 5-15%
-- Profissional de vendas B2B vs. gerente de vendas B2B: 75-95%
-- Profissional de RH vs. recrutamento: 60-85%
-- Profissional de vendas vs. marketing digital: 30-50%
-- Headhunter/Recruiter vs. Talent Acquisition: 70-90%
-
-== FORMATO OBRIGATORIO DO CURRICULO OTIMIZADO ==
-
-Use \\n para quebras de linha simples e \\n\\n para separar secoes.
-TEXTO PURO APENAS — sem asteriscos, sem emojis, sem markdown, sem icones.
-
-Estrutura obrigatoria:
-[Nome Completo]
-[Cargo Atual/Titulo Profissional] | [Cidade, Estado - Pais]
-[Telefone] | [Email] | [LinkedIn]
-
-RESUMO PROFISSIONAL
-[Parágrafo de 3-5 linhas com palavras-chave ATS da vaga, descrevendo o perfil do candidato com base nas informações reais do currículo]
-
-COMPETÊNCIAS PRINCIPAIS
-
-[ÁREA 1 COM ACENTUAÇÃO CORRETA]
-- Competência 1
-- Competência 2
-- Competência 3
-
-[ÁREA 2 COM ACENTUAÇÃO CORRETA]
-- Competência 1
-- Competência 2
-
-EXPERIÊNCIA PROFISSIONAL
-
-[Cargo] | [Empresa] | [Período EXATO DO CURRÍCULO ORIGINAL]
-- Realização 1 com palavras-chave ATS
-- Realização 2 com métricas e impacto
-- Realização 3
-
-[Cargo] | [Empresa] | [Período EXATO DO CURRÍCULO ORIGINAL]
-- Realização 1
-- Realização 2
-
-FORMAÇÃO ACADÊMICA
-[Curso] | [Instituição] | [Ano]
-
-IDIOMAS
-[Idioma]: [Nível]
-
-IMPORTANTE: Preserve EXATAMENTE os períodos, datas, nomes de empresas e cargos do currículo original.
-NUNCA use emojis, asteriscos ou qualquer símbolo especial no texto do currículo.
-USE SEMPRE acentuação correta em português, inclusive em palavras MAIÚSCULAS: EXPERIÊNCIA, FORMAÇÃO, COMPETÊNCIAS, CERTIFICAÇÕES, GESTÃO, ATUAÇÃO, INFORMAÇÕES, ATENÇÃO, etc.
-
-Responda APENAS com JSON valido, sem markdown, sem texto fora do JSON.`;
-
-      const userMessage = `CURRICULO ORIGINAL DO CANDIDATO (preserve todos os dados exatamente como estao):
+      const userMessage = `CANDIDATE'S ORIGINAL RESUME (preserve ALL data exactly as-is — dates, companies, titles are sacred):
 ${resumeText}
 
 ---
 
-VAGA${scrapedSuccessfully ? " (conteudo extraido automaticamente do site)" : " (link/descricao fornecida pelo candidato)"}:
+JOB DESCRIPTION ${jobContext}:
 ${jobContent}
 
 ---
 
-INSTRUCOES FINAIS:
+ANALYSIS INSTRUCTIONS:
 
-1. Analise a compatibilidade REAL entre o curriculo e a vaga com maxima honestidade
-2. Gere o curriculo otimizado mantendo TODOS os dados originais (datas, empresas, cargos) intactos
-3. Apenas reescreva bullets e resumo com palavras-chave ATS da vaga
-4. Se a compatibilidade for baixa, seja honesto nas sugestoes e explique o que falta
-5. No campo "changes", descreva APENAS o que voce realmente alterou no texto
-6. NUNCA use emojis, asteriscos (**), sublinhados (__) ou qualquer formatacao markdown no campo "optimizedResume"
-7. Use APENAS texto puro com \\n para quebras de linha no campo "optimizedResume"
+Execute your DUAL-LAYER analysis (ATS algorithm + human recruiter eye).
 
-Retorne JSON com esta estrutura exata:
+1. Score the resume BEFORE optimization (matchScore = sum of scoreBreakdown components)
+2. Calculate the elite atsScore as the weighted average of atsScoreBreakdown
+3. Identify ALL 15 Career Killers that apply to this specific resume
+4. Generate the optimized resume maintaining IDENTICAL factual data (dates, companies, titles)
+5. For improvedBullets: identify 3-5 weak bullets from the original and show STAR-method transformations
+6. List missingKeywords: exact terms from JD not present in resume
+7. projectedMatchScore MUST be >= matchScore (optimization can only improve, never worsen)
+8. Be rigorously honest — if compatibility is low, say so and explain the gap
+
+Return ONLY valid JSON matching the schema exactly. No markdown, no text outside JSON.
+
+JSON structure:
 {
-  "matchScore": <numero 0-100 — score ORIGINAL antes da otimizacao, calculado como soma do scoreBreakdown>,
-  "projectedMatchScore": <numero 0-100 — score PROJETADO apos as otimizacoes. REGRA ABSOLUTA: projectedMatchScore DEVE SER SEMPRE MAIOR OU IGUAL ao matchScore. A otimizacao do curriculo so pode melhorar o score, NUNCA piorar. Calcule o ganho realista que as palavras-chave adicionadas e a reorganizacao trariam>,
-  "jobTitle": "<titulo/cargo da vaga>",
-  "jobArea": "<area profissional: Tecnologia, Vendas, RH, Marketing, Financas, etc.>",
-  "keywords": [<8-12 palavras-chave mais importantes da vaga para ATS>],
-  "suggestions": [<4-8 sugestoes especificas, honestas e acionaveis>],
+  "matchScore": <sum of scoreBreakdown — ORIGINAL score before optimization>,
+  "projectedMatchScore": <realistic score AFTER optimization — always >= matchScore>,
+  "jobTitle": "<exact job title from JD>",
+  "jobArea": "<specific area: e.g. Backend Node.js Development, B2B SaaS Sales, People Management in Retail>",
+  "keywords": [<12-14 most critical JD keywords in order of importance>],
+  "suggestions": [<5-8 specific, honest, actionable suggestions — format: [ACTION] — [WHY it hurts] — [HOW to fix step by step]>],
+  "optimizedResume": "<full optimized resume — PLAIN TEXT with \\n breaks — ZERO emojis/asterisks/markdown — dates/companies/titles IDENTICAL to original>",
   "changes": [
     {
-      "section": "<secao alterada>",
-      "description": "<o que exatamente foi alterado e por que — seja especifico>",
+      "section": "<exact section changed>",
+      "description": "<what was wrong, what was fixed, why it impacts ATS AND recruiter — specific to THIS candidate>",
       "impact": "<alto | medio | baixo>"
     }
   ],
-  "optimizedResume": "<curriculo completo otimizado — TEXTO PURO com \\n para quebras de linha — SEM emojis, SEM asteriscos, SEM markdown — preservando TODOS os dados originais>",
-  "coverLetterPoints": ["<ponto 1 para carta de apresentacao — argumento especifico baseado no curriculo real>", "<ponto 2>", "<ponto 3>"],
-  "gapAnalysis": ["<gap 1 — habilidade ou experiencia que a vaga exige mas o candidato nao tem>", "<gap 2>"],
+  "coverLetterPoints": [
+    "<point 1: connects candidate's trajectory with this company/job's main pain point>",
+    "<point 2: candidate's most relevant differentiator for this position>",
+    "<point 3: achievement or result that most impresses for this context>"
+  ],
+  "gapAnalysis": [<honest list of real gaps between candidate profile and job — can be [] if high compatibility>],
   "scoreBreakdown": {
     "technicalSkills": <0-30>,
     "experience": <0-30>,
     "keywords": <0-20>,
     "tools": <0-10>,
     "seniority": <0-10>
-  }
-}
-
-LEMBRETE CRITICO: 
-- O campo "optimizedResume" deve ser TEXTO PURO sem nenhum caracter especial de formatacao
-- Datas, empresas e cargos devem ser IDENTICOS ao curriculo original
-- Nenhum emoji ou icone em nenhum campo do JSON
-- projectedMatchScore DEVE SER OBRIGATORIAMENTE >= matchScore (a otimizacao NUNCA piora o score, apenas melhora ou mantem)
-- "coverLetterPoints": 3 pontos especificos e personalizados para usar em carta de apresentacao, baseados no curriculo real do candidato e nos requisitos da vaga
-- "gapAnalysis": lista honesta dos gaps reais entre o perfil do candidato e a vaga (pode ser lista vazia [] se compatibilidade for alta)`;
+  },
+  "atsScore": <0-100 weighted average>,
+  "atsScoreBreakdown": {
+    "parsing": <0-20>,
+    "keywordMatch": <0-25>,
+    "experienceQuality": <0-20>,
+    "impactMetrics": <0-15>,
+    "formatting": <0-10>,
+    "skillsAlignment": <0-10>
+  },
+  "strengths": [<3-5 specific strengths of this resume for this job>],
+  "weaknesses": [<3-5 specific weaknesses to address>],
+  "missingKeywords": [<exact keywords from JD not found in resume>],
+  "improvedBullets": [
+    {
+      "original": "<exact weak bullet from the resume>",
+      "improved": "<STAR-method rewrite with action verb + scale + result>",
+      "reason": "<why this bullet was weak and what makes the improved version stronger>"
+    }
+  ],
+  "recruiterInsights": [<3-5 insights a senior recruiter would note about this candidate for this specific role>],
+  "seniorityLevel": "<Júnior | Pleno | Sênior | Gerente | Diretor | C-Level>",
+  "careerTrajectory": "<2-3 sentence narrative of candidate's career progression and positioning>",
+  "formattingIssues": [<list of specific ATS-hostile formatting elements detected — empty [] if none>]
+}`;
 
       const response = await invokeLLM({
         messages: [
-          { role: "system", content: systemPrompt },
+          { role: "system", content: ELITE_ATS_SYSTEM_PROMPT },
           { role: "user", content: userMessage },
         ],
+        maxTokens: 4096,
+        temperature: 0.1,
         response_format: {
           type: "json_schema",
           json_schema: {
-            name: "resume_analysis",
+            name: "elite_resume_analysis",
+            strict: true,
+            schema: ANALYSIS_JSON_SCHEMA,
+          },
+        },
+      });
+
+      const rawContent = response.choices[0]?.message?.content;
+      if (!rawContent) throw new Error("Resposta vazia da IA. Tente novamente.");
+      const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(content);
+      } catch {
+        // Attempt to extract JSON if wrapped in markdown fences
+        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
+        if (jsonMatch) {
+          try {
+            parsed = JSON.parse(jsonMatch[1]);
+          } catch {
+            throw new Error("Erro ao processar resposta da IA. Tente novamente.");
+          }
+        } else {
+          throw new Error("Erro ao processar resposta da IA. Tente novamente.");
+        }
+      }
+
+      const validated = AnalysisResultSchema.parse(parsed);
+
+      // Enforce score integrity
+      const computedScore =
+        validated.scoreBreakdown.technicalSkills +
+        validated.scoreBreakdown.experience +
+        validated.scoreBreakdown.keywords +
+        validated.scoreBreakdown.tools +
+        validated.scoreBreakdown.seniority;
+
+      const finalMatchScore = Math.min(100, Math.max(0, computedScore));
+
+      let finalProjectedScore = Math.min(100, Math.max(0, validated.projectedMatchScore));
+      if (finalProjectedScore < finalMatchScore) {
+        const minGain = Math.min(5, 100 - finalMatchScore);
+        finalProjectedScore = Math.min(100, finalMatchScore + minGain);
+      }
+
+      // Enforce atsScore integrity (weighted average)
+      const sb = validated.atsScoreBreakdown;
+      const computedAts = Math.round(
+        sb.parsing * 0.20 +
+        sb.keywordMatch * 0.25 +
+        sb.experienceQuality * 0.20 +
+        sb.impactMetrics * 0.15 +
+        sb.formatting * 0.10 +
+        sb.skillsAlignment * 0.10
+      );
+      const finalAtsScore = Math.min(100, Math.max(0, computedAts));
+
+      return {
+        ...validated,
+        optimizedResume: sanitizeResume(validated.optimizedResume),
+        matchScore: finalMatchScore,
+        projectedMatchScore: finalProjectedScore,
+        atsScore: finalAtsScore,
+        scrapedJob: scrapedSuccessfully,
+      };
+    }),
+
+  // ── adapt ──────────────────────────────────────────────────────────────────
+  adapt: publicProcedure
+    .input(
+      z.object({
+        optimizedResume: z.string().min(50, "Currículo muito curto"),
+        keywords: z.array(z.string()),
+        jobTitle: z.string(),
+        platform: z.enum(["gupy", "linkedin", "site_empresa", "recrutador"]),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { optimizedResume, keywords, jobTitle, platform } = input;
+
+      const adaptSystemPrompt = `You are a senior expert in resume adaptation for different application platforms and contexts in the Brazilian job market.
+
+ABSOLUTE RULES — NEVER VIOLATE:
+1. NEVER alter dates, periods, years or months of any experience
+2. NEVER alter names of companies where the candidate worked
+3. NEVER alter job titles/positions the candidate held
+4. NEVER invent skills, tools, certifications or achievements
+5. NEVER use emojis, asterisks (**), underscores (__) or any markdown
+6. NEVER use tables or multiple columns
+
+AUTO-VERIFICATION before returning:
+□ All dates IDENTICAL to the received resume?
+□ All company names IDENTICAL?
+□ Zero emojis and zero markdown in adaptedResume?
+IF ANY ANSWER IS NO → fix before returning.
+
+Return ONLY valid JSON, no text outside JSON.`;
+
+      const userMessage = `BASE RESUME (already optimized — adapt for the platform):
+${optimizedResume}
+
+JOB TITLE: ${jobTitle}
+IDENTIFIED KEYWORDS: ${keywords.join(", ")}
+
+${PLATFORM_RULES[platform]}
+
+Adapt the resume following EXACTLY the platform rules above.
+Keep all factual data identical to the original.
+
+Return JSON:
+{
+  "adaptedResume": "<adapted resume in plain text with \\n for breaks — ZERO emojis, asterisks or markdown>",
+  "platformTips": [
+    "<practical tip specific to applying on this platform>",
+    "<tip 2>",
+    "<tip 3>"
+  ],
+  "whatChanged": "<2-3 line summary of what was adapted and why for this platform>"
+}`;
+
+      const AdaptResultSchema = z.object({
+        adaptedResume: z.string(),
+        platformTips: z.array(z.string()),
+        whatChanged: z.string(),
+      });
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: adaptSystemPrompt },
+          { role: "user", content: userMessage },
+        ],
+        maxTokens: 4096,
+        temperature: 0.1,
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "adapt_result",
             strict: true,
             schema: {
               type: "object",
               properties: {
-                matchScore: { type: "number" },
-                projectedMatchScore: { type: "number" },
-                jobTitle: { type: "string" },
-                jobArea: { type: "string" },
-                keywords: { type: "array", items: { type: "string" } },
-                suggestions: { type: "array", items: { type: "string" } },
-                changes: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      section: { type: "string" },
-                      description: { type: "string" },
-                      impact: { type: "string", enum: ["alto", "medio", "baixo"] },
-                    },
-                    required: ["section", "description", "impact"],
-                    additionalProperties: false,
-                  },
-                },
-                optimizedResume: { type: "string" },
-                coverLetterPoints: { type: "array", items: { type: "string" } },
-                gapAnalysis: { type: "array", items: { type: "string" } },
-                scoreBreakdown: {
-                  type: "object",
-                  properties: {
-                    technicalSkills: { type: "number" },
-                    experience: { type: "number" },
-                    keywords: { type: "number" },
-                    tools: { type: "number" },
-                    seniority: { type: "number" },
-                  },
-                  required: ["technicalSkills", "experience", "keywords", "tools", "seniority"],
-                  additionalProperties: false,
-                },
+                adaptedResume: { type: "string" },
+                platformTips: { type: "array", items: { type: "string" } },
+                whatChanged: { type: "string" },
               },
-              required: ["matchScore", "projectedMatchScore", "jobTitle", "jobArea", "keywords", "suggestions", "changes", "optimizedResume", "coverLetterPoints", "gapAnalysis", "scoreBreakdown"],
+              required: ["adaptedResume", "platformTips", "whatChanged"],
               additionalProperties: false,
             },
           },
@@ -367,198 +841,37 @@ LEMBRETE CRITICO:
       try {
         parsed = JSON.parse(content);
       } catch {
-        throw new Error("Erro ao processar resposta da IA. Tente novamente.");
+        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[1]);
+        } else {
+          throw new Error("Erro ao processar resposta da IA. Tente novamente.");
+        }
       }
 
-      const validated = AnalysisResultSchema.parse(parsed);
+      const validated = AdaptResultSchema.parse(parsed);
 
-      // Sanitiza o curriculo otimizado: remove emojis, asteriscos, markdown e corrige acentuacao em maiusculas
-      const sanitizeResume = (text: string): string => {
-        // Mapa de correcao de palavras comuns em maiusculas sem acento -> com acento correto em portugues
-        const accentFixes: Array<[RegExp, string]> = [
-          // Cabecalhos de secao mais comuns
-          [/\bEXPERIENCIA\b/g, "EXPERIÊNCIA"],
-          [/\bFORMACAO\b/g, "FORMAÇÃO"],
-          [/\bCOMPETENCIAS\b/g, "COMPETÊNCIAS"],
-          [/\bCERTIFICACAO\b/g, "CERTIFICAÇÃO"],
-          [/\bCERTIFICACAOES\b/g, "CERTIFICAÇÕES"],
-          [/\bCERTIFICACOES\b/g, "CERTIFICAÇÕES"],
-          [/\bINFORMACAO\b/g, "INFORMAÇÃO"],
-          [/\bINFORMACOES\b/g, "INFORMAÇÕES"],
-          [/\bATUACAO\b/g, "ATUAÇÃO"],
-          [/\bGESTAO\b/g, "GESTÃO"],
-          [/\bADMINISTRACAO\b/g, "ADMINISTRAÇÃO"],
-          [/\bCOMUNICACAO\b/g, "COMUNICAÇÃO"],
-          [/\bNEGOCIACAO\b/g, "NEGOCIAÇÃO"],
-          [/\bAVALIACAO\b/g, "AVALIAÇÃO"],
-          [/\bPLANEJAMENTO\b/g, "PLANEJAMENTO"], // ja correto
-          [/\bCOORDENACAO\b/g, "COORDENAÇÃO"],
-          [/\bIMPLEMENTACAO\b/g, "IMPLEMENTAÇÃO"],
-          [/\bCOMERCIALIZACAO\b/g, "COMERCIALIZAÇÃO"],
-          [/\bINTEGRACAO\b/g, "INTEGRAÇÃO"],
-          [/\bPROSPECAO\b/g, "PROSPECÇÃO"],
-          [/\bPROSPECCAO\b/g, "PROSPECÇÃO"],
-          [/\bFUNCAO\b/g, "FUNÇÃO"],
-          [/\bRELACAO\b/g, "RELAÇÃO"],
-          [/\bRELACOES\b/g, "RELAÇÕES"],
-          [/\bSOLUCAO\b/g, "SOLUÇÃO"],
-          [/\bSOLUCOES\b/g, "SOLUÇÕES"],
-          [/\bPOSICAO\b/g, "POSIÇÃO"],
-          [/\bOPERACAO\b/g, "OPERAÇÃO"],
-          [/\bOPERACOES\b/g, "OPERAÇÕES"],
-          [/\bCAPACITACAO\b/g, "CAPACITAÇÃO"],
-          [/\bFORMATACAO\b/g, "FORMATAÇÃO"],
-          [/\bCONTRATACAO\b/g, "CONTRATAÇÃO"],
-          [/\bPRESENTACAO\b/g, "APRESENTAÇÃO"],
-          [/\bAPRESENTACAO\b/g, "APRESENTAÇÃO"],
-          [/\bADAPTACAO\b/g, "ADAPTAÇÃO"],
-          [/\bPRODUCAO\b/g, "PRODUÇÃO"],
-          [/\bCONSERVACAO\b/g, "CONSERVAÇÃO"],
-          [/\bCONSTRUCAO\b/g, "CONSTRUÇÃO"],
-          [/\bREDUCAO\b/g, "REDUÇÃO"],
-          [/\bEXECUCAO\b/g, "EXECUÇÃO"],
-          [/\bCONTRIBUICAO\b/g, "CONTRIBUIÇÃO"],
-          [/\bCONTRIBUICOES\b/g, "CONTRIBUIÇÕES"],
-          [/\bINSTITUICAO\b/g, "INSTITUIÇÃO"],
-          [/\bINSTITUICOES\b/g, "INSTITUIÇÕES"],
-          [/\bGERACAO\b/g, "GERAÇÃO"],
-          [/\bCRIACAO\b/g, "CRIAÇÃO"],
-          [/\bACAO\b/g, "AÇÃO"],
-          [/\bACAOES\b/g, "AÇÕES"],
-          [/\bACOES\b/g, "AÇÕES"],
-          [/\bCONEXAO\b/g, "CONEXÃO"],
-          [/\bCONEXOES\b/g, "CONEXÕES"],
-          [/\bAMPLIACAO\b/g, "AMPLIAÇÃO"],
-          [/\bPARTICIPACAO\b/g, "PARTICIPAÇÃO"],
-          [/\bGERENCIAMENTO\b/g, "GERENCIAMENTO"], // ja correto
-          // Outras palavras comuns sem acento
-          [/\bACADEMICA\b/g, "ACADÊMICA"],
-          [/\bACADEMICO\b/g, "ACADÊMICO"],
-          [/\bTECNICA\b/g, "TÉCNICA"],
-          [/\bTECNICO\b/g, "TÉCNICO"],
-          [/\bTECNICAS\b/g, "TÉCNICAS"],
-          [/\bTECNICOS\b/g, "TÉCNICOS"],
-          [/\bESTRATEGICA\b/g, "ESTRATÉGICA"],
-          [/\bESTRATEGICO\b/g, "ESTRATÉGICO"],
-          [/\bANALISE\b/g, "ANÁLISE"],
-          [/\bANALISES\b/g, "ANÁLISES"],
-          [/\bCOMERCIAL\b/g, "COMERCIAL"], // ja correto
-          [/\bVENDAS\b/g, "VENDAS"], // ja correto
-          [/\bIDIOMAS\b/g, "IDIOMAS"], // ja correto
-          [/\bPROFISSIONAL\b/g, "PROFISSIONAL"], // ja correto
-          [/\bPRINCIPAIS\b/g, "PRINCIPAIS"], // ja correto
-          [/\bHABILIDADES\b/g, "HABILIDADES"], // ja correto
-          [/\bCURRICULO\b/g, "CURRÍCULO"],
-          [/\bPERIODO\b/g, "PERÍODO"],
-          [/\bPERIODOS\b/g, "PERÍODOS"],
-          [/\bEDUCACAO\b/g, "EDUCAÇÃO"],
-          [/\bCONHECIMENTO\b/g, "CONHECIMENTO"], // ja correto
-          [/\bCONHECIMENTOS\b/g, "CONHECIMENTOS"], // ja correto
-          [/\bCOMERCIO\b/g, "COMÉRCIO"],
-          [/\bNEGOCIOS\b/g, "NEGÓCIOS"],
-          [/\bSERVICO\b/g, "SERVIÇO"],
-          [/\bSERVICOS\b/g, "SERVIÇOS"],
-          [/\bCLIENTE\b/g, "CLIENTE"], // ja correto
-          [/\bCLIENTES\b/g, "CLIENTES"], // ja correto
-          [/\bMERCADO\b/g, "MERCADO"], // ja correto
-          [/\bPROJETO\b/g, "PROJETO"], // ja correto
-          [/\bPROJETOS\b/g, "PROJETOS"], // ja correto
-          [/\bDESENVOLVIMENTO\b/g, "DESENVOLVIMENTO"], // ja correto
-          [/\bCOMUNIDADE\b/g, "COMUNIDADE"], // ja correto
-          [/\bLIDERANCA\b/g, "LIDERANÇA"],
-          [/\bLIDERANCAS\b/g, "LIDERANÇAS"],
-          [/\bCOMPETENCIA\b/g, "COMPETÊNCIA"],
-          [/\bEXCELENCIA\b/g, "EXCELÊNCIA"],
-          [/\bEXPERIENCE\b/g, "EXPERIENCE"], // ingles - ja correto
-          [/\bCONFIGURACAO\b/g, "CONFIGURAÇÃO"],
-          [/\bCONFIGURACOES\b/g, "CONFIGURAÇÕES"],
-          [/\bCOMUNICACAO\b/g, "COMUNICAÇÃO"],
-          [/\bCOMUNICACOES\b/g, "COMUNICAÇÕES"],
-          [/\bADMINISTRACAO\b/g, "ADMINISTRAÇÃO"],
-          [/\bADMINISTRATIVA\b/g, "ADMINISTRATIVA"], // ja correto
-          [/\bADMINISTRATIVO\b/g, "ADMINISTRATIVO"], // ja correto
-          [/\bGESTOR\b/g, "GESTOR"], // ja correto
-          [/\bGESTORA\b/g, "GESTORA"], // ja correto
-          [/\bCONSULTOR\b/g, "CONSULTOR"], // ja correto
-          [/\bCONSULTORA\b/g, "CONSULTORA"], // ja correto
-          [/\bDIRECAO\b/g, "DIREÇÃO"],
-          [/\bDIRECOES\b/g, "DIREÇÕES"],
-          [/\bCONTRIBUICAO\b/g, "CONTRIBUIÇÃO"],
-          [/\bCONTRIBUICOES\b/g, "CONTRIBUIÇÕES"],
-          [/\bSELECAO\b/g, "SELEÇÃO"],
-          [/\bSELECOES\b/g, "SELEÇÕES"],
-          [/\bCOMERCIALIZACAO\b/g, "COMERCIALIZAÇÃO"],
-          [/\bNEGOCIACAO\b/g, "NEGOCIAÇÃO"],
-          [/\bNEGOCIACOES\b/g, "NEGOCIAÇÕES"],
-          [/\bEVOLUCAO\b/g, "EVOLUÇÃO"],
-          [/\bEVOLUCOES\b/g, "EVOLUÇÕES"],
-          [/\bREVISAO\b/g, "REVISÃO"],
-          [/\bREVISOES\b/g, "REVISÕES"],
-          [/\bPROGRAMACAO\b/g, "PROGRAMAÇÃO"],
-          [/\bCOMUNICACAO\b/g, "COMUNICAÇÃO"],
-          [/\bDECISAO\b/g, "DECISÃO"],
-          [/\bDECISOES\b/g, "DECISÕES"],
-          [/\bDECISAO\b/g, "DECISÃO"],
-          [/\bCONVERSAO\b/g, "CONVERSÃO"],
-          [/\bCONVERSOES\b/g, "CONVERSÕES"],
-          [/\bCOMERCIAL\b/g, "COMERCIAL"], // ja correto
-        ];
-
-        let result = text
-          // Remove emojis usando ranges de code points
-          .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "") // surrogate pairs (emojis)
-          .replace(/[\u2600-\u27BF]/g, "") // misc symbols
-          .replace(/[\uFE00-\uFE0F]/g, "") // variation selectors
-          // Remove asteriscos de markdown bold/italic
+      const sanitize = (text: string): string =>
+        text
+          .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
+          .replace(/[\u2600-\u27BF]/g, "")
           .replace(/\*\*([^*]+)\*\*/g, "$1")
           .replace(/\*([^*]+)\*/g, "$1")
           .replace(/__([^_]+)__/g, "$1")
-          .replace(/_([^_]+)_/g, "$1")
-          // Remove hashtags de markdown heading
           .replace(/^#{1,6}\s+/gm, "")
-          // Remove backticks
           .replace(/`([^`]+)`/g, "$1")
-          // Remove caracteres de controle exceto newlines e tabs
           .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
-          // Normaliza multiplas linhas em branco (max 2)
           .replace(/\n{3,}/g, "\n\n")
           .trim();
 
-        // Aplica correcoes de acentuacao em palavras maiusculas
-        for (const [pattern, replacement] of accentFixes) {
-          result = result.replace(pattern, replacement);
-        }
-
-        return result;
-      };
-
-      const computedScore =
-        validated.scoreBreakdown.technicalSkills +
-        validated.scoreBreakdown.experience +
-        validated.scoreBreakdown.keywords +
-        validated.scoreBreakdown.tools +
-        validated.scoreBreakdown.seniority;
-
-      const finalMatchScore = Math.min(100, Math.max(0, computedScore));
-
-      // Garantir que o projectedMatchScore NUNCA seja menor que o matchScore original
-      // A otimização só pode melhorar ou manter o score, nunca piorar
-      let finalProjectedScore = Math.min(100, Math.max(0, validated.projectedMatchScore));
-      if (finalProjectedScore < finalMatchScore) {
-        // Se a IA retornou um valor menor, corrige para ser pelo menos o score original + ganho mínimo
-        const minGain = Math.min(5, 100 - finalMatchScore); // ganho mínimo de 5pts ou o que faltar para 100
-        finalProjectedScore = Math.min(100, finalMatchScore + minGain);
-      }
-
       return {
-        ...validated,
-        optimizedResume: sanitizeResume(validated.optimizedResume),
-        matchScore: finalMatchScore,
-        projectedMatchScore: finalProjectedScore,
-        scrapedJob: scrapedSuccessfully,
+        adaptedResume: sanitize(validated.adaptedResume),
+        platformTips: validated.platformTips,
+        whatChanged: validated.whatChanged,
       };
     }),
 
+  // ── generateFromScratch ────────────────────────────────────────────────────
   generateFromScratch: publicProcedure
     .input(
       z.object({
@@ -590,19 +903,20 @@ LEMBRETE CRITICO:
     .mutation(async ({ input }) => {
       const d = input.wizardData;
 
-      const systemPrompt = `Voce e uma consultora senior de carreira certificada (CPRW) e especialista em recolocacao profissional com 20 anos de experiencia.
+      const systemPrompt = `You are a senior certified career consultant (CPRW) and professional resume writer specialized in Brazilian job market.
 
-Sua tarefa e criar um curriculo profissional completo, otimizado para ATS, usando APENAS as informacoes fornecidas.
+Your task: create a complete, ATS-optimized professional resume using ONLY the information provided.
 
-REGRAS ABSOLUTAS:
-1. Use APENAS as informacoes fornecidas. NUNCA invente dados, datas, empresas ou habilidades.
-2. Transforme descricoes informais em bullets profissionais com verbos de acao fortes.
-3. O curriculo deve ser TEXTO PURO com quebras de linha reais.
-4. PROIBIDO: emojis, asteriscos, markdown, hashtags, tabelas.
-5. Estrutura: Nome > Titulo > Contato > Resumo Profissional > Competencias > Experiencia > Formacao > Idiomas > Certificacoes.
-6. Use verbos de acao: Liderou, Implementou, Desenvolveu, Aumentou, Gerenciou, Negociou, Conquistou.
-7. Quantifique resultados quando o usuario mencionar numeros.
-8. Retorne APENAS o texto do curriculo, sem JSON, sem explicacoes adicionais.`;
+ABSOLUTE RULES:
+1. Use ONLY the information provided. NEVER invent data, dates, companies, or skills.
+2. Transform informal descriptions into professional impact bullets with strong action verbs.
+3. The resume MUST be PLAIN TEXT with real line breaks (\\n).
+4. PROHIBITED: emojis, asterisks, markdown, hashtags, tables.
+5. Structure: Name > Title > Contact > Professional Summary > Core Competencies > Experience > Education > Languages > Certifications.
+6. Use action verbs in Portuguese: Liderou, Implementou, Desenvolveu, Aumentou, Gerenciou, Negociou, Conquistou, Entregou, Estruturou.
+7. Quantify results when the user mentions numbers.
+8. Section headers in UPPERCASE with correct Portuguese accents: EXPERIÊNCIA PROFISSIONAL, FORMAÇÃO ACADÊMICA, COMPETÊNCIAS PRINCIPAIS, CERTIFICAÇÕES, IDIOMAS.
+9. Return ONLY the resume text, no JSON, no additional explanations.`;
 
       const expLines = d.experiences
         .filter(e => e.role)
@@ -614,28 +928,40 @@ REGRAS ABSOLUTAS:
         .map(e => `${e.course} - ${e.institution}${e.year ? ` (${e.year})` : ""}`)
         .join("\n");
 
-      const userMessage = `Crie um curriculo profissional com estas informacoes:\n\nNOME: ${d.name}\nTITULO: ${d.title}\nCIDADE: ${d.city}\nTELEFONE: ${d.phone}\nEMAIL: ${d.email}\nLINKEDIN: ${d.linkedin}\n\nRESUMO (informal): ${d.summary}\n\nEXPERIENCIAS:\n${expLines}\n\nFORMACAO:\n${eduLines}\n\nHABILIDADES: ${d.skills}\nIDIOMAS: ${d.languages}\nCERTIFICACAO: ${d.certifications}`;
+      const userMessage = `Create a professional resume with these details:
+
+NAME: ${d.name}
+TITLE: ${d.title}
+CITY: ${d.city}
+PHONE: ${d.phone}
+EMAIL: ${d.email}
+LINKEDIN: ${d.linkedin}
+
+SUMMARY (informal): ${d.summary}
+
+EXPERIENCES:
+${expLines}
+
+EDUCATION:
+${eduLines}
+
+SKILLS: ${d.skills}
+LANGUAGES: ${d.languages}
+CERTIFICATIONS: ${d.certifications}`;
 
       const response = await invokeLLM({
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userMessage },
         ],
+        maxTokens: 3000,
+        temperature: 0.2,
       });
 
       const rawContent = response.choices[0]?.message?.content;
       if (!rawContent) throw new Error("Resposta vazia da IA. Tente novamente.");
       const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
 
-      const sanitized = content
-        .replace(/\*\*([^*]+)\*\*/g, "$1")
-        .replace(/\*([^*]+)\*/g, "$1")
-        .replace(/^#{1,6}\s+/gm, "")
-        .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
-        .replace(/[\u2600-\u27BF]/g, "")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
-
-      return { generatedResume: sanitized };
+      return { generatedResume: sanitizeResume(content) };
     }),
 });
