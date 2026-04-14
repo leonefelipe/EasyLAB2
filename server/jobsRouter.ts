@@ -2,6 +2,8 @@ import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 export interface JobListing {
   title: string;
   company: string;
@@ -10,171 +12,218 @@ export interface JobListing {
   source: string;
   description: string;
   matchReason: string;
+  applicantCount?: number;
+  numVacancies?: number;
+  publishedAt?: string;
+  expiresAt?: string;
+  workType?: string;
+  isReal: boolean;
 }
 
-/**
- * Busca vagas reais do Brasil em múltiplos sites de emprego.
- * Usa scraping das páginas de busca públicas e IA para filtrar relevância.
- */
-async function fetchJobsFromSource(
-  source: "gupy" | "vagas" | "linkedin" | "catho" | "infojobs",
-  query: string,
-  location: string = "Brasil"
-): Promise<{ title: string; company: string; location: string; url: string; source: string; description: string }[]> {
-  const encodedQuery = encodeURIComponent(query);
-  const encodedLocation = encodeURIComponent(location);
+// ─── LinkedIn URL builder (ported from linkedin-mcp-server search_jobs.py) ───
 
-  const urls: Record<string, string> = {
-    gupy: `https://portal.gupy.io/job-search/term=${encodedQuery}`,
-    vagas: `https://www.vagas.com.br/vagas-de-${encodedQuery.replace(/%20/g, "-")}`,
-    linkedin: `https://www.linkedin.com/jobs/search/?keywords=${encodedQuery}&location=${encodedLocation}&f_TPR=r604800`,
-    catho: `https://www.catho.com.br/vagas/${encodedQuery.replace(/%20/g, "-")}/`,
-    infojobs: `https://www.infojobs.com.br/empregos.aspx?palabra=${encodedQuery}`,
-  };
+const LI_EXPERIENCE_MAP: Record<string, string> = {
+  júnior: "2", junior: "2", estágio: "1", estagio: "1",
+  pleno: "3", associate: "3",
+  sênior: "4", senior: "4", mid_senior: "4",
+  gerente: "5", manager: "5",
+  diretor: "6", director: "6", "c-level": "6",
+};
 
-  const sourceNames: Record<string, string> = {
-    gupy: "Gupy",
-    vagas: "Vagas.com.br",
-    linkedin: "LinkedIn",
-    catho: "Catho",
-    infojobs: "InfoJobs",
-  };
+const LI_WORK_TYPE_MAP: Record<string, string> = {
+  presencial: "1", "on_site": "1", "on-site": "1",
+  remoto: "2", remote: "2",
+  híbrido: "3", hibrido: "3", hybrid: "3",
+};
+
+function buildLinkedInSearchUrl(params: {
+  keywords: string;
+  location?: string;
+  seniorityLevel?: string;
+  workType?: string;
+  easyApply?: boolean;
+}): string {
+  const parts: string[] = [`keywords=${encodeURIComponent(params.keywords)}`];
+  if (params.location) parts.push(`location=${encodeURIComponent(params.location)}`);
+  // Past week — good freshness without being too restrictive
+  parts.push("f_TPR=r604800");
+  // Sort by date for freshness
+  parts.push("sortBy=DD");
+
+  if (params.seniorityLevel) {
+    const lvl = params.seniorityLevel.toLowerCase();
+    for (const [key, code] of Object.entries(LI_EXPERIENCE_MAP)) {
+      if (lvl.includes(key)) { parts.push(`f_E=${code}`); break; }
+    }
+  }
+  if (params.workType) {
+    const code = LI_WORK_TYPE_MAP[params.workType.toLowerCase()];
+    if (code) parts.push(`f_WT=${code}`);
+  }
+  if (params.easyApply) parts.push("f_AL=true");
+
+  return `https://www.linkedin.com/jobs/search/?${parts.join("&")}`;
+}
+
+// ─── Gupy Public REST API ─────────────────────────────────────────────────────
+
+interface GupyApiJob {
+  id: number;
+  name: string;
+  publishedAt: string;
+  expiresAt: string;
+  numVacancies: number;
+  applicantCount: number;
+  isConfidential: boolean;
+  jobUrl?: string;
+  workplaceType?: string;
+  city?: string;
+  state?: string;
+  companyName?: string;
+  careerPageName?: string;
+  careerPageUrl?: string;
+}
+
+async function fetchGupyJobs(query: string, limit = 6): Promise<JobListing[]> {
+  const url = `https://portal.gupy.io/api/job-search/v1/jobs?jobName=${encodeURIComponent(query)}&limit=${limit}&offset=0`;
 
   try {
-    const response = await fetch(urls[source], {
+    const res = await fetch(url, {
       headers: {
+        Accept: "application/json",
+        "Accept-Language": "pt-BR,pt;q=0.9",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
-        "Cache-Control": "no-cache",
       },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(9000),
     });
 
-    if (!response.ok) return [];
+    if (!res.ok) return [];
+    const json = await res.json() as { data?: GupyApiJob[] };
+    if (!json.data || !Array.isArray(json.data) || json.data.length === 0) return [];
 
-    const html = await response.text();
-
-    // Extrai links e títulos de vagas do HTML usando regex simples
-    const jobs: { title: string; company: string; location: string; url: string; source: string; description: string }[] = [];
-
-    // Padrões para diferentes sites
-    const execAll = (regex: RegExp, text: string, limit: number, cb: (m: RegExpExecArray) => void) => {
-      let m: RegExpExecArray | null;
-      let count = 0;
-      while ((m = regex.exec(text)) !== null && count < limit) {
-        cb(m);
-        count++;
-      }
+    const workTypeMap: Record<string, string> = {
+      remote: "Remoto", hybrid: "Híbrido", "on-site": "Presencial",
     };
 
-    if (source === "gupy") {
-      execAll(/"jobName":"([^"]+)","companyName":"([^"]+)"/g, html, 5, (match) => {
-        jobs.push({
-          title: match[1],
-          company: match[2],
-          location: "Brasil",
-          url: `https://portal.gupy.io/job-search/term=${encodedQuery}`,
-          source: sourceNames[source],
-          description: `Vaga de ${match[1]} na empresa ${match[2]}`,
-        });
-      });
-    } else if (source === "vagas") {
-      execAll(/<h2[^>]*class="[^"]*job-shortlist__title[^"]*"[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/gi, html, 5, (match) => {
-        const companyMatch = html.match(/<span[^>]*class="[^"]*job-shortlist__company[^"]*"[^>]*>([^<]+)<\/span>/i);
-        jobs.push({
-          title: match[2].trim(),
-          company: companyMatch ? companyMatch[1].trim() : "Empresa confidencial",
-          location: "Brasil",
-          url: match[1].startsWith("http") ? match[1] : `https://www.vagas.com.br${match[1]}`,
-          source: sourceNames[source],
-          description: `Vaga de ${match[2].trim()}`,
-        });
-      });
-    } else if (source === "linkedin") {
-      execAll(/<a[^>]*class="[^"]*base-card__full-link[^"]*"[^>]*href="([^"]+)"[^>]*>\s*<span[^>]*>([^<]+)<\/span>/gi, html, 5, (match) => {
-        jobs.push({
-          title: match[2].trim(),
-          company: "Ver no LinkedIn",
-          location: location,
-          url: match[1].split("?")[0],
-          source: sourceNames[source],
-          description: `Vaga de ${match[2].trim()} no LinkedIn`,
-        });
-      });
-    } else if (source === "catho") {
-      execAll(/<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/gi, html, 5, (match) => {
-        const title = match[2].trim();
-        if (title.length > 5 && title.length < 100) {
-          jobs.push({
-            title,
-            company: "Ver na Catho",
-            location: "Brasil",
-            url: match[1].startsWith("http") ? match[1] : `https://www.catho.com.br${match[1]}`,
-            source: sourceNames[source],
-            description: `Vaga de ${title} na Catho`,
-          });
-        }
-      });
-    } else if (source === "infojobs") {
-      execAll(/<a[^>]*class="[^"]*js_o[^"]*"[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/gi, html, 5, (match) => {
-        const title = match[2].trim();
-        if (title.length > 5 && title.length < 100) {
-          jobs.push({
-            title,
-            company: "Ver no InfoJobs",
-            location: "Brasil",
-            url: match[1].startsWith("http") ? match[1] : `https://www.infojobs.com.br${match[1]}`,
-            source: sourceNames[source],
-            description: `Vaga de ${title} no InfoJobs`,
-          });
-        }
+    return json.data.map((job): JobListing => {
+      const company = job.isConfidential ? "Empresa confidencial"
+        : job.companyName || job.careerPageName || "Empresa não informada";
+      const locationParts = [job.city, job.state].filter(Boolean);
+      const baseLocation = locationParts.length > 0 ? locationParts.join(", ") : "Brasil";
+      const workType = job.workplaceType ? workTypeMap[job.workplaceType] : undefined;
+
+      const jobUrl = job.jobUrl ?? (job.careerPageUrl
+        ? `${job.careerPageUrl.replace(/\/$/, "")}/jobs/${job.id}`
+        : `https://portal.gupy.io/job-search/term=${encodeURIComponent(query)}`);
+
+      const publishedAt = job.publishedAt
+        ? new Date(job.publishedAt).toLocaleDateString("pt-BR") : undefined;
+      const expiresAt = job.expiresAt
+        ? new Date(job.expiresAt).toLocaleDateString("pt-BR") : undefined;
+
+      return {
+        title: job.name,
+        company,
+        location: workType ? `${baseLocation} · ${workType}` : baseLocation,
+        url: jobUrl,
+        source: "Gupy",
+        description: [
+          job.applicantCount ? `${job.applicantCount} candidatos` : null,
+          job.numVacancies > 1 ? `${job.numVacancies} vagas` : null,
+          publishedAt ? `Publicada ${publishedAt}` : null,
+        ].filter(Boolean).join(" · ") || `Vaga de ${job.name}`,
+        matchReason: "",
+        applicantCount: job.applicantCount,
+        numVacancies: job.numVacancies,
+        publishedAt,
+        expiresAt,
+        workType,
+        isReal: true,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+// ─── Vagas.com.br HTML scrape ─────────────────────────────────────────────────
+
+async function fetchVagasJobs(query: string, limit = 4): Promise<JobListing[]> {
+  try {
+    const slug = query.toLowerCase().replace(/\s+/g, "-").replace(/[^\w-]/g, "");
+    const res = await fetch(`https://www.vagas.com.br/vagas-de-${slug}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept: "text/html",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+      },
+      signal: AbortSignal.timeout(7000),
+    });
+    if (!res.ok) return [];
+    const html = await res.text();
+
+    const jobs: JobListing[] = [];
+    const pattern = /<h2[^>]*class="[^"]*job-shortlist__title[^"]*"[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/gi;
+    let m: RegExpExecArray | null;
+
+    while ((m = pattern.exec(html)) !== null && jobs.length < limit) {
+      const title = m[2].trim();
+      const href = m[1].startsWith("http") ? m[1] : `https://www.vagas.com.br${m[1]}`;
+      const snippet = html.slice(Math.max(0, m.index - 100), m.index + 800);
+      const compMatch = snippet.match(/<span[^>]*class="[^"]*job-shortlist__company[^"]*"[^>]*>([^<]+)<\/span>/i);
+      const locMatch = snippet.match(/<span[^>]*class="[^"]*job-shortlist__location[^"]*"[^>]*>([^<]+)<\/span>/i);
+
+      jobs.push({
+        title,
+        company: compMatch ? compMatch[1].trim() : "Empresa confidencial",
+        location: locMatch ? locMatch[1].trim() : "Brasil",
+        url: href,
+        source: "Vagas.com.br",
+        description: `Vaga de ${title}`,
+        matchReason: "",
+        isReal: true,
       });
     }
-
     return jobs;
   } catch {
     return [];
   }
 }
 
-/**
- * Usa IA para gerar vagas simuladas realistas quando o scraping não retorna resultados.
- * Baseado no perfil do candidato e área de atuação.
- */
-async function generateRealisticJobSuggestions(
+// ─── AI fallback — smart search links (not fake listings) ────────────────────
+
+async function generateSmartSearchLinks(
   jobTitle: string,
   jobArea: string,
-  keywords: string[]
+  keywords: string[],
+  seniorityLevel: string,
 ): Promise<JobListing[]> {
-  const prompt = `Você é um especialista em recrutamento brasileiro. Com base no perfil abaixo, gere 6 sugestões de vagas REAIS e REALISTAS que existem no mercado brasileiro, com links de busca reais nos principais sites de emprego.
+  const prompt = `Especialista em recrutamento no Brasil. Gere 4 links de BUSCA reais para este perfil:
 
-Perfil do candidato:
-- Cargo buscado: ${jobTitle}
-- Área: ${jobArea}
-- Palavras-chave do perfil: ${keywords.slice(0, 8).join(", ")}
+Cargo: ${jobTitle}
+Área: ${jobArea}
+Senioridade: ${seniorityLevel}
+Keywords: ${keywords.slice(0, 5).join(", ")}
 
-Gere vagas com links de busca reais nos seguintes sites:
+Use APENAS estes formatos de URL (substitua TERMO pelo cargo relevante):
 - Gupy: https://portal.gupy.io/job-search/term=TERMO
-- LinkedIn: https://www.linkedin.com/jobs/search/?keywords=TERMO&location=Brasil
-- Vagas.com.br: https://www.vagas.com.br/vagas-de-TERMO
+- Vagas.com.br: https://www.vagas.com.br/vagas-de-TERMO-TERMO2
 - Catho: https://www.catho.com.br/vagas/TERMO/
 - InfoJobs: https://www.infojobs.com.br/empregos.aspx?palabra=TERMO
-- Pandapé: https://pandape.com.br/vagas?q=TERMO
 
-Substitua TERMO pelo cargo/função relevante. Use variações do cargo para diversificar.
+Use variações diferentes do cargo para diversificar resultados.
 
-Retorne JSON:
+JSON:
 {
   "jobs": [
     {
-      "title": "título exato da vaga",
-      "company": "nome da empresa ou 'Diversas empresas'",
-      "location": "cidade ou 'Remoto' ou 'Híbrido - São Paulo'",
-      "url": "link de busca real no site",
-      "source": "nome do site (Gupy, LinkedIn, etc.)",
-      "description": "breve descrição do que a vaga busca (1-2 frases)",
-      "matchReason": "por que essa vaga é compatível com o perfil do candidato (1 frase)"
+      "title": "SDR em Tecnologia — Gupy",
+      "company": "Diversas empresas",
+      "location": "Brasil",
+      "url": "URL real",
+      "source": "Gupy",
+      "description": "O que essa busca encontra",
+      "matchReason": "Compatibilidade com perfil"
     }
   ]
 }`;
@@ -182,13 +231,15 @@ Retorne JSON:
   try {
     const response = await invokeLLM({
       messages: [
-        { role: "system", content: "Você é um especialista em recrutamento brasileiro. Gere sugestões de vagas reais e relevantes." },
+        { role: "system", content: "Especialista em recrutamento. Responda APENAS JSON válido, sem texto fora do JSON." },
         { role: "user", content: prompt },
       ],
+      maxTokens: 800,
+      temperature: 0.1,
       response_format: {
         type: "json_schema",
         json_schema: {
-          name: "job_suggestions",
+          name: "search_links",
           strict: true,
           schema: {
             type: "object",
@@ -218,14 +269,47 @@ Retorne JSON:
       },
     });
 
-    const rawContent = response.choices[0]?.message?.content;
-    if (!rawContent) return [];
-    const parsed = JSON.parse(typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent));
-    return parsed.jobs || [];
+    const raw = response.choices[0]?.message?.content;
+    if (!raw) return [];
+    const parsed = JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw));
+    return (parsed.jobs || []).map((j: JobListing) => ({ ...j, isReal: false }));
   } catch {
     return [];
   }
 }
+
+// ─── Match reason builder ─────────────────────────────────────────────────────
+
+function buildMatchReason(job: JobListing, jobArea: string): string {
+  const parts: string[] = [];
+
+  if (job.applicantCount !== undefined) {
+    if (job.applicantCount < 50)
+      parts.push(`🟢 Baixa concorrência — ${job.applicantCount} candidatos`);
+    else if (job.applicantCount < 150)
+      parts.push(`🟡 ${job.applicantCount} candidatos`);
+    else
+      parts.push(`🔴 Alta disputa — ${job.applicantCount} candidatos`);
+  }
+
+  if (job.numVacancies && job.numVacancies > 1)
+    parts.push(`${job.numVacancies} vagas abertas`);
+
+  if (job.expiresAt) {
+    try {
+      const [d, mo, y] = job.expiresAt.split("/").map(Number);
+      const expires = new Date(y, mo - 1, d);
+      const daysLeft = Math.ceil((expires.getTime() - Date.now()) / 86400000);
+      if (daysLeft >= 0 && daysLeft <= 5)
+        parts.push(`⚠ Encerra em ${daysLeft}d`);
+    } catch { /* ignore */ }
+  }
+
+  if (parts.length === 0) parts.push(`Compatível com perfil em ${jobArea}`);
+  return parts.join(" · ");
+}
+
+// ─── Router ───────────────────────────────────────────────────────────────────
 
 export const jobsRouter = router({
   search: publicProcedure
@@ -234,45 +318,80 @@ export const jobsRouter = router({
       jobArea: z.string().min(2),
       keywords: z.array(z.string()).max(15),
       location: z.string().default("Brasil"),
+      seniorityLevel: z.string().default("Pleno"),
+      workType: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const { jobTitle, jobArea, keywords, location } = input;
+      const { jobTitle, jobArea, keywords, location, seniorityLevel, workType } = input;
 
-      // Monta query de busca baseada no título e palavras-chave
-      const searchQuery = jobTitle.length > 3 ? jobTitle : keywords.slice(0, 3).join(" ");
-
-      // Tenta scraping em paralelo de múltiplos sites
-      const [gupyJobs, vagasJobs, linkedinJobs] = await Promise.allSettled([
-        fetchJobsFromSource("gupy", searchQuery, location),
-        fetchJobsFromSource("vagas", searchQuery, location),
-        fetchJobsFromSource("linkedin", searchQuery, location),
+      // ── 1. Real APIs in parallel ───────────────────────────────────────────
+      const [gupyResult, vagasResult] = await Promise.allSettled([
+        fetchGupyJobs(jobTitle, 6),
+        fetchVagasJobs(jobTitle, 4),
       ]);
 
-      const scrapedJobs: JobListing[] = [
-        ...(gupyJobs.status === "fulfilled" ? gupyJobs.value : []),
-        ...(vagasJobs.status === "fulfilled" ? vagasJobs.value : []),
-        ...(linkedinJobs.status === "fulfilled" ? linkedinJobs.value : []),
-      ].map(j => ({ ...j, matchReason: `Compatível com seu perfil em ${jobArea}` }));
+      const realJobs: JobListing[] = [
+        ...(gupyResult.status === "fulfilled" ? gupyResult.value : []),
+        ...(vagasResult.status === "fulfilled" ? vagasResult.value : []),
+      ].map(job => ({ ...job, matchReason: buildMatchReason(job, jobArea) }));
 
-      // Sempre usa IA para gerar sugestões de qualidade com links reais
-      const aiJobs = await generateRealisticJobSuggestions(jobTitle, jobArea, keywords);
+      // ── 2. LinkedIn parametrized URL (no scraping) ─────────────────────────
+      const linkedInUrl = buildLinkedInSearchUrl({
+        keywords: jobTitle,
+        location: location !== "Brasil" ? location : "Brazil",
+        seniorityLevel,
+        workType,
+      });
 
-      // Combina: prioriza scraped (se houver), complementa com IA
-      const allJobs = [...scrapedJobs, ...aiJobs];
+      const linkedInEntry: JobListing = {
+        title: `${jobTitle} — Busca LinkedIn`,
+        company: "Múltiplas empresas",
+        location: workType ? `${location} · ${workType}` : location,
+        url: linkedInUrl,
+        source: "LinkedIn",
+        description: "Link direto com filtros de cargo, localização e senioridade baseados no seu perfil.",
+        matchReason: "Filtros aplicados: última semana · ordenado por data recente · Easy Apply opcional",
+        isReal: false,
+      };
 
-      // Remove duplicatas por URL e limita a 8 vagas
+      // ── 3. AI fallback for extra links if real results are sparse ──────────
+      const aiLinks = realJobs.length < 3
+        ? await generateSmartSearchLinks(jobTitle, jobArea, keywords, seniorityLevel)
+        : await generateSmartSearchLinks(jobTitle, jobArea, keywords, seniorityLevel).then(r => r.slice(0, 2));
+
+      // ── 4. Assemble + deduplicate + sort ───────────────────────────────────
+      const all: JobListing[] = [
+        ...realJobs,
+        linkedInEntry,
+        ...aiLinks,
+      ];
+
       const seen = new Set<string>();
-      const uniqueJobs = allJobs.filter(j => {
+      const unique = all.filter(j => {
         const key = j.url.split("?")[0];
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
-      }).slice(0, 8);
+      });
+
+      // Real jobs first, then LinkedIn, then AI links
+      unique.sort((a, b) => {
+        if (a.isReal && !b.isReal) return -1;
+        if (!a.isReal && b.isReal) return 1;
+        if (a.source === "LinkedIn") return -1;
+        if (b.source === "LinkedIn") return 1;
+        // Among real Gupy jobs, sort by fewer applicants (better odds)
+        if (a.isReal && b.isReal && a.applicantCount !== undefined && b.applicantCount !== undefined)
+          return a.applicantCount - b.applicantCount;
+        return 0;
+      });
 
       return {
-        jobs: uniqueJobs,
-        searchQuery,
-        totalFound: uniqueJobs.length,
+        jobs: unique.slice(0, 10),
+        searchQuery: jobTitle,
+        totalFound: unique.length,
+        realJobsFound: realJobs.length,
+        linkedInUrl,
       };
     }),
 });
