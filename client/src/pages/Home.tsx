@@ -123,6 +123,14 @@ function ResumeRenderer({ text }: { text: string }) {
   const normalized = text.replace(/\\n/g, "\n").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const lines = normalized.split("\n");
 
+  // Find the first 3 non-empty lines — they form the header block (name / title / contact)
+  const nonEmptyIndices: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim().length > 0) nonEmptyIndices.push(i);
+    if (nonEmptyIndices.length === 3) break;
+  }
+  const headerSet = new Set(nonEmptyIndices);
+
   const isSectionTitle = (line: string) => {
     const t = line.trim();
     if (t.length < 4) return false;
@@ -131,7 +139,6 @@ function ResumeRenderer({ text }: { text: string }) {
     const upper = t.replace(/[^A-ZÀ-ÖØ-Þ]/g, "");
     return upper.length / alpha.length >= 0.7;
   };
-  const isNameLine = (idx: number) => lines.findIndex(l => l.trim().length > 0) === idx;
   const isBullet = (line: string) => /^[•\-\*\u2022\u2023\u25E6\u2043]/.test(line.trim());
 
   const elements: React.ReactNode[] = [];
@@ -139,7 +146,31 @@ function ResumeRenderer({ text }: { text: string }) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]; const t = line.trim();
     if (!t) { elements.push(<div key={key++} className="h-3" />); continue; }
-    if (isNameLine(i)) { elements.push(<h1 key={key++} className="text-2xl font-bold text-slate-900 mb-1 tracking-tight">{t}</h1>); continue; }
+
+    // Header block: name (idx 0), title (idx 1), contact (idx 2)
+    if (headerSet.has(i)) {
+      const headerPos = nonEmptyIndices.indexOf(i);
+      if (headerPos === 0) {
+        elements.push(<h1 key={key++} className="text-2xl font-bold text-slate-900 tracking-tight">{t}</h1>);
+      } else if (headerPos === 1) {
+        elements.push(<p key={key++} className="text-base font-semibold text-blue-900 mt-0.5">{t}</p>);
+      } else {
+        // Contact line — split by | and render as inline tags
+        const parts = t.split("|").map(p => p.trim()).filter(Boolean);
+        elements.push(
+          <p key={key++} className="text-xs text-slate-500 mt-1 mb-4 flex flex-wrap gap-x-3 gap-y-1">
+            {parts.map((part, pi) => (
+              <span key={pi} className="flex items-center gap-1">
+                {pi > 0 && <span className="text-slate-300">|</span>}
+                {part}
+              </span>
+            ))}
+          </p>
+        );
+      }
+      continue;
+    }
+
     if (isSectionTitle(t)) { elements.push(<div key={key++} className="mt-5 mb-2"><h2 className="text-xs font-bold text-blue-900 uppercase tracking-widest border-b border-blue-200 pb-1">{t}</h2></div>); continue; }
     if (isBullet(t)) { elements.push(<div key={key++} className="flex gap-2 items-start ml-2 my-0.5"><span className="text-blue-600 mt-1 flex-shrink-0 text-xs">•</span><span className="text-slate-700 text-sm leading-relaxed">{t.replace(/^[•\-\*\u2023\u25E6\u2043]\s*/, "")}</span></div>); continue; }
     const isJobLine = /[|\u2014\u2013]/.test(t) || /\(\d{4}/.test(t);
@@ -842,7 +873,7 @@ export default function Home() {
             </div>
             <div>
               <h2 className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>Link ou Descrição da Vaga</h2>
-              <p className={`text-sm mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Cole o link (LinkedIn, Gupy, etc.) ou a descrição completa da vaga</p>
+              <p className={`text-sm mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Cole o link (Gupy, Vagas.com, etc.) ou a descrição completa. Links do LinkedIn: cole o texto da vaga diretamente.</p>
             </div>
           </div>
           <Textarea
@@ -851,6 +882,23 @@ export default function Home() {
             onChange={e => setJobUrl(e.target.value)}
             className={`min-h-28 ${isDarkMode ? "bg-slate-700 border-slate-600 text-white placeholder:text-slate-400" : "bg-slate-50 border-slate-300 text-slate-900 placeholder:text-slate-400"}`}
           />
+          {/* LinkedIn warning */}
+          {(() => {
+            try {
+              const u = new URL(jobUrl.trim());
+              if (u.hostname.includes("linkedin.com")) {
+                return (
+                  <div className="flex items-start gap-3 mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>
+                      <strong>LinkedIn não permite leitura automática.</strong> Para uma análise precisa, abra a vaga, selecione toda a descrição e cole o texto aqui no lugar do link.
+                    </span>
+                  </div>
+                );
+              }
+            } catch { /* not a URL */ }
+            return null;
+          })()}
           <div className="flex gap-3 mt-6">
             <Button
               onClick={handleAnalyzeJob}
@@ -902,7 +950,10 @@ export default function Home() {
                   <div className="flex items-center gap-3 flex-wrap">
                     <h2 className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>Match Score</h2>
                     {results.jobArea && <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-medium">Área: {results.jobArea}</span>}
-                    {results.scrapedJob && <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">Vaga lida automaticamente</span>}
+                    {results.scrapedJob
+                      ? <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">✓ Vaga lida automaticamente</span>
+                      : <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">⚠ Análise baseada no texto colado</span>
+                    }
                   </div>
                   {results.jobTitle && <p className={`font-medium mt-1 ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>{results.jobTitle}</p>}
                   <p className={`text-sm mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Compatibilidade entre seu currículo e a vaga</p>
