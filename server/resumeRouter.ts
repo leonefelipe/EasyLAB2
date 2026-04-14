@@ -49,9 +49,34 @@ const AnalysisResultSchema = z.object({
   missingKeywords: z.array(z.string()),
   improvedBullets: z.array(ImprovedBulletSchema),
   recruiterInsights: z.array(z.string()),
-  seniorityLevel: z.string(),               // "Júnior" | "Pleno" | "Sênior" | "Gerente" | "Diretor"
-  careerTrajectory: z.string(),             // Narrative of career progression
+  seniorityLevel: z.string(),
+  careerTrajectory: z.string(),
   formattingIssues: z.array(z.string()),
+
+  // ── NEW: Competitive Intelligence ─────────────────────────────────────────
+  competitiveEdges: z.array(z.string()),
+  competitiveRisks: z.array(z.string()),
+
+  // ── NEW: Salary Intelligence ───────────────────────────────────────────────
+  salaryRange: z.object({
+    cltMin: z.number(),
+    cltMax: z.number(),
+    pjMin: z.number(),
+    pjMax: z.number(),
+    currency: z.string(),
+    confidence: z.enum(["high", "medium", "low"]),
+    rationale: z.string(),
+  }),
+  negotiationTips: z.array(z.string()),
+
+  // ── NEW: Recruiter Psychological Profile ──────────────────────────────────
+  recruiterProfile: z.object({
+    companyType: z.string(),
+    cultureSignals: z.string(),
+    recruiterFears: z.array(z.string()),
+    recruiterTriggers: z.array(z.string()),
+    idealNarrative: z.string(),
+  }),
 });
 
 export type AnalysisResult = z.infer<typeof AnalysisResultSchema>;
@@ -288,6 +313,38 @@ const ANALYSIS_JSON_SCHEMA = {
     seniorityLevel: { type: "string" },
     careerTrajectory: { type: "string" },
     formattingIssues: { type: "array", items: { type: "string" } },
+    // Competitive Intelligence
+    competitiveEdges: { type: "array", items: { type: "string" } },
+    competitiveRisks: { type: "array", items: { type: "string" } },
+    // Salary Intelligence
+    salaryRange: {
+      type: "object",
+      properties: {
+        cltMin: { type: "number" },
+        cltMax: { type: "number" },
+        pjMin: { type: "number" },
+        pjMax: { type: "number" },
+        currency: { type: "string" },
+        confidence: { type: "string", enum: ["high", "medium", "low"] },
+        rationale: { type: "string" },
+      },
+      required: ["cltMin", "cltMax", "pjMin", "pjMax", "currency", "confidence", "rationale"],
+      additionalProperties: false,
+    },
+    negotiationTips: { type: "array", items: { type: "string" } },
+    // Recruiter Psychological Profile
+    recruiterProfile: {
+      type: "object",
+      properties: {
+        companyType: { type: "string" },
+        cultureSignals: { type: "string" },
+        recruiterFears: { type: "array", items: { type: "string" } },
+        recruiterTriggers: { type: "array", items: { type: "string" } },
+        idealNarrative: { type: "string" },
+      },
+      required: ["companyType", "cultureSignals", "recruiterFears", "recruiterTriggers", "idealNarrative"],
+      additionalProperties: false,
+    },
   },
   required: [
     "matchScore", "projectedMatchScore", "jobTitle", "jobArea",
@@ -296,13 +353,16 @@ const ANALYSIS_JSON_SCHEMA = {
     "atsScore", "atsScoreBreakdown", "strengths", "weaknesses",
     "missingKeywords", "improvedBullets", "recruiterInsights",
     "seniorityLevel", "careerTrajectory", "formattingIssues",
+    "competitiveEdges", "competitiveRisks",
+    "salaryRange", "negotiationTips",
+    "recruiterProfile",
   ],
   additionalProperties: false,
 } as const;
 
 // ─── Elite ATS System Prompt ──────────────────────────────────────────────────
 
-const ELITE_ATS_SYSTEM_PROMPT = `You are an elite hybrid: part ATS algorithm, part executive recruiter, part CPRW-certified career strategist. Your credentials:
+const ELITE_ATS_SYSTEM_PROMPT = `You are an elite hybrid: part ATS algorithm, part executive recruiter, part CPRW-certified career strategist, part competitive intelligence analyst. Your credentials:
 
 - CPRW (Certified Professional Resume Writer) — PARWCC
 - ACRW — Career Directors International
@@ -310,12 +370,15 @@ const ELITE_ATS_SYSTEM_PROMPT = `You are an elite hybrid: part ATS algorithm, pa
 - Former Director of Talent Acquisition with deep access to ATS algorithms: Workday, Taleo, Greenhouse, iCIMS, SAP SuccessFactors, Gupy, Lever, TOTVS RH
 - PhD in Computational Linguistics focused on NLP applied to resume screening
 - Creator of the "Dual-Layer Resume Optimization" method — simultaneous ATS + human-eye optimization
+- Lead compensation analyst with access to Glassdoor, LinkedIn Salary, Catho, and Robert Half salary surveys (Brazilian market)
 
-You think in TWO LAYERS simultaneously:
+You think in FOUR LAYERS simultaneously:
 LAYER 1 — ATS ENGINE: You parse, rank, and score the resume exactly as Gupy, Taleo, Workday would.
 LAYER 2 — HUMAN RECRUITER: You evaluate whether the resume makes a recruiter want to pick up the phone after a 6-second scan.
+LAYER 3 — COMPETITIVE INTELLIGENCE: You analyze how this candidate stacks up against the other 50-300 candidates applying for this same role.
+LAYER 4 — COMPENSATION STRATEGIST: You assess salary positioning and negotiation leverage based on the role and the candidate's profile.
 
-When the two layers conflict, prioritize ATS on structure/format, and human on narrative/content.
+When layers conflict, prioritize: ATS on structure/format → human on narrative/content → competitive on differentiation.
 
 ════════════════════════════════════════════════════════════
   HOW ATS SYSTEMS PROCESS RESUMES (2025 state-of-the-art)
@@ -447,6 +510,80 @@ CALIBRATION REFERENCE:
 - Same role, divergent keywords: 50-70%
 - Same role, aligned keywords: 78-92%
 - 100% is impossible (no perfect match exists)
+
+════════════════════════════════════════════════════════════
+  LAYER 3 — COMPETITIVE INTELLIGENCE
+════════════════════════════════════════════════════════════
+
+Analyze how this candidate compares to the TYPICAL applicant pool for this role.
+For each role, recruiters see hundreds of resumes. Your job is to identify:
+
+COMPETITIVE POOL PROFILE — what does the average applicant for this role look like?
+- Typical education level for this position
+- Typical years of experience in the pool
+- Common skills/tools everyone has (table stakes — NOT differentiators)
+- Common weaknesses in applicants for this role
+
+CANDIDATE'S COMPETITIVE EDGES — what makes THIS candidate stand out vs. the pool?
+- Specific quantified achievements others typically lack
+- Cross-functional experience that is rare for this role
+- Industry exposure that creates unique perspective
+- Certifications or tools that are valued but uncommon in applicants
+
+COMPETITIVE RISKS — where might this candidate LOSE to others?
+- Skills gaps vs. top-tier applicants
+- Missing experience that strong candidates will have
+- Red flags that hurt competitive positioning
+
+Output: competitiveEdges (array of 2-4 concrete differentiators) + competitiveRisks (array of 1-3 risks)
+
+════════════════════════════════════════════════════════════
+  LAYER 4 — SALARY INTELLIGENCE & NEGOTIATION POSITIONING
+════════════════════════════════════════════════════════════
+
+Based on the role, industry, location (Brasil), and candidate's seniority/experience, provide:
+
+SALARY RANGE (Brazilian market, CLT and PJ where relevant):
+- Estimate based on: role title, seniority, industry sector, company size signals in the JD
+- Sources: Glassdoor BR, LinkedIn Salary Insights, Robert Half Salary Guide BR, Catho Salary Survey
+- Be honest about uncertainty — give a realistic range, not aspirational figures
+- Distinguish between CLT (with benefits) vs PJ (higher gross, no benefits)
+
+NEGOTIATION LEVERAGE — what gives THIS candidate pricing power?
+- Rare skills that increase market value
+- Cross-industry experience that commands premium
+- Quantified achievements that justify top-of-range positioning
+
+NEGOTIATION RISKS — what may pressure compensation down?
+- Employment gaps
+- Frequent job changes
+- Skills gaps vs. job requirements
+
+Format: salaryRange object with { cltMin, cltMax, pjMin, pjMax, currency: "BRL", confidence: "high|medium|low", rationale: string }
+negotiationTips: array of 2-3 specific, actionable salary negotiation tips for THIS candidate
+
+════════════════════════════════════════════════════════════
+  LAYER 5 — RECRUITER PSYCHOLOGICAL FINGERPRINT
+════════════════════════════════════════════════════════════
+
+Based on the JD language and company signals, profile the RECRUITER/HIRING MANAGER reading this resume:
+
+COMPANY CULTURE SIGNALS from the JD:
+- Startup/scale-up vs. corporate vs. traditional (affects tone and format expectations)
+- Growth-oriented vs. stability-oriented culture
+- Technical vs. relationship-oriented team
+
+WHAT THIS RECRUITER SPECIFICALLY FEARS (pain points they're trying to solve):
+- The problem they need this hire to solve
+- Past bad hires they're trying to avoid
+- Skills or traits that are dealbreakers for THIS role
+
+WHAT THIS RECRUITER FINDS IRRESISTIBLE:
+- The one achievement type that will make them call immediately
+- The specific phrase or keyword that triggers a "yes" reaction
+- The narrative arc they want the candidate to tell
+
+Output: recruiterProfile object with { companyType, cultureSignals, recruiterFears, recruiterTriggers, idealNarrative }
 
 ════════════════════════════════════════════════════════════
   ABSOLUTE LAW — NEVER VIOLATE UNDER ANY CIRCUMSTANCE
@@ -636,28 +773,32 @@ ${jobContent}
 
 ANALYSIS INSTRUCTIONS:
 
-Execute your DUAL-LAYER analysis (ATS algorithm + human recruiter eye).
+Execute your FOUR-LAYER analysis (ATS + Human Recruiter + Competitive Intelligence + Salary/Negotiation).
 
 1. Score the resume BEFORE optimization (matchScore = sum of scoreBreakdown components)
-2. Calculate the elite atsScore as the weighted average of atsScoreBreakdown
+2. Calculate elite atsScore = DIRECT SUM of all six atsScoreBreakdown components
 3. Identify ALL 15 Career Killers that apply to this specific resume
 4. Generate the optimized resume maintaining IDENTICAL factual data (dates, companies, titles)
 5. For improvedBullets: identify 3-5 weak bullets from the original and show STAR-method transformations
 6. List missingKeywords: exact terms from JD not present in resume
 7. projectedMatchScore MUST be >= matchScore (optimization can only improve, never worsen)
-8. Be rigorously honest — if compatibility is low, say so and explain the gap
+8. COMPETITIVE INTELLIGENCE: analyze this candidate vs. the typical applicant pool for this role
+9. SALARY INTELLIGENCE: estimate realistic CLT and PJ ranges for Brazilian market based on role + seniority
+10. RECRUITER PROFILE: decode what the hiring manager fears and what triggers an immediate call
+11. Be rigorously honest — if compatibility is low, say so and explain the gap
+12. All text in Brazilian Portuguese except internationally adopted English terms
 
-Return ONLY valid JSON matching the schema exactly. No markdown, no text outside JSON.
+Return ONLY valid JSON. No markdown, no text outside JSON.
 
 JSON structure:
 {
   "matchScore": <sum of scoreBreakdown — ORIGINAL score before optimization>,
   "projectedMatchScore": <realistic score AFTER optimization — always >= matchScore>,
   "jobTitle": "<exact job title from JD>",
-  "jobArea": "<specific area: e.g. Backend Node.js Development, B2B SaaS Sales, People Management in Retail>",
+  "jobArea": "<specific area in Portuguese: e.g. Desenvolvimento Backend Node.js, Vendas B2B SaaS, Gestão de Pessoas no Varejo>",
   "keywords": [<12-14 most critical JD keywords in order of importance>],
-  "suggestions": [<5-8 specific, honest, actionable suggestions — format: [ACTION] — [WHY it hurts] — [HOW to fix step by step]>],
-  "optimizedResume": "<full optimized resume — PLAIN TEXT with \\n breaks — ZERO emojis/asterisks/markdown — dates/companies/titles IDENTICAL to original>",
+  "suggestions": [<5-8 specific, honest, actionable suggestions — format: [AÇÃO] — [POR QUE prejudica] — [COMO corrigir passo a passo]>],
+  "optimizedResume": "<full optimized resume — PLAIN TEXT with \\n breaks — ZERO emojis/asterisks/markdown — dates/companies/titles IDENTICAL to original — in Brazilian Portuguese>",
   "changes": [
     {
       "section": "<exact section changed>",
@@ -678,7 +819,7 @@ JSON structure:
     "tools": <0-10>,
     "seniority": <0-10>
   },
-  "atsScore": <0-100 weighted average>,
+  "atsScore": <DIRECT SUM of the six atsScoreBreakdown components>,
   "atsScoreBreakdown": {
     "parsing": <0-20>,
     "keywordMatch": <0-25>,
@@ -693,14 +834,48 @@ JSON structure:
   "improvedBullets": [
     {
       "original": "<exact weak bullet from the resume>",
-      "improved": "<STAR-method rewrite with action verb + scale + result>",
+      "improved": "<STAR-method rewrite with action verb + scale + result — in Portuguese>",
       "reason": "<why this bullet was weak and what makes the improved version stronger>"
     }
   ],
   "recruiterInsights": [<3-5 insights a senior recruiter would note about this candidate for this specific role>],
   "seniorityLevel": "<Júnior | Pleno | Sênior | Gerente | Diretor | C-Level>",
-  "careerTrajectory": "<2-3 sentence narrative of candidate's career progression and positioning>",
-  "formattingIssues": [<list of specific ATS-hostile formatting elements detected — empty [] if none>]
+  "careerTrajectory": "<2-3 sentence narrative of candidate's career progression and positioning — in Portuguese>",
+  "formattingIssues": [<list of specific ATS-hostile formatting elements detected — empty [] if none>],
+
+  "competitiveEdges": [
+    "<2-4 concrete differentiators vs. the typical applicant pool — specific to THIS candidate and THIS role>",
+    "<e.g.: 'Combinação de 18 anos em vendas B2B + recrutamento é rara no pool de candidatos para Talent Acquisition — a maioria vem só de RH'>"
+  ],
+  "competitiveRisks": [
+    "<1-3 risks where other candidates may have an edge — honest and specific>",
+    "<e.g.: 'Candidatos mais jovens podem ter certificações ATS mais recentes (Gupy Certification, SAP SuccessFactors)'>"
+  ],
+
+  "salaryRange": {
+    "cltMin": <realistic CLT minimum in BRL — integer, no decimals>,
+    "cltMax": <realistic CLT maximum in BRL — integer, no decimals>,
+    "pjMin": <realistic PJ minimum in BRL — integer, no decimals, gross>,
+    "pjMax": <realistic PJ maximum in BRL — integer, no decimals, gross>,
+    "currency": "BRL",
+    "confidence": "<high | medium | low — based on how much salary data is inferable from the JD>",
+    "rationale": "<2-3 sentences explaining the range: what drives value up, what presses it down, market context>"
+  },
+  "negotiationTips": [
+    "<2-3 specific, actionable salary negotiation tips tailored to THIS candidate's strengths and gaps>"
+  ],
+
+  "recruiterProfile": {
+    "companyType": "<startup | scale-up | corporativo | tradicional | consultoria | agência>",
+    "cultureSignals": "<2-3 sentences: what the JD language reveals about the culture and what they value>",
+    "recruiterFears": [
+      "<2-3 specific fears this recruiter has based on the JD — what bad hires or problems are they trying to avoid?>"
+    ],
+    "recruiterTriggers": [
+      "<2-3 specific triggers that will make THIS recruiter immediately excited — based on JD signals>"
+    ],
+    "idealNarrative": "<The one-paragraph story this recruiter wants the candidate to tell — what arc, what proof points, what tone>"
+  }
 }`;
 
       const response = await invokeLLM({
@@ -708,7 +883,7 @@ JSON structure:
           { role: "system", content: ELITE_ATS_SYSTEM_PROMPT },
           { role: "user", content: userMessage },
         ],
-        maxTokens: 4096,
+        maxTokens: 6000,
         temperature: 0.1,
         response_format: {
           type: "json_schema",
