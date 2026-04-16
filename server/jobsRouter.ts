@@ -324,21 +324,53 @@ export const jobsRouter = router({
     .mutation(async ({ input }) => {
       const { jobTitle, jobArea, keywords, location, seniorityLevel, workType } = input;
 
+      // Location scoping:
+      // - Remote jobs: search across all Brazil
+      // - Presencial/Hybrid: use candidate city (passed as location from frontend)
+      // - No preference: use candidate city with Brazil as fallback
+      const isRemote = workType === "remoto";
+      const searchLocation = isRemote ? "Brasil" : location;
+
       // ── 1. Real APIs in parallel ───────────────────────────────────────────
       const [gupyResult, vagasResult] = await Promise.allSettled([
         fetchGupyJobs(jobTitle, 6),
         fetchVagasJobs(jobTitle, 4),
       ]);
 
-      const realJobs: JobListing[] = [
+      const rawRealJobs: JobListing[] = [
         ...(gupyResult.status === "fulfilled" ? gupyResult.value : []),
         ...(vagasResult.status === "fulfilled" ? vagasResult.value : []),
-      ].map(job => ({ ...job, matchReason: buildMatchReason(job, jobArea) }));
+      ];
+
+      // Apply workType and location filtering on real jobs
+      const realJobs = rawRealJobs
+        .filter(job => {
+          // If user selected a specific workType, filter Gupy jobs by workplaceType
+          if (workType && workType !== "sem_preferencia" && job.isReal && job.workType) {
+            const wt = job.workType.toLowerCase();
+            if (workType === "remoto" && !wt.includes("remoto")) return false;
+            if (workType === "hibrido" && !wt.includes("híbrido") && !wt.includes("hibrido")) return false;
+            if (workType === "presencial" && !wt.includes("presencial") && !wt.includes("on-site")) return false;
+          }
+          // For presencial/hybrid: filter by city proximity (city name match as proxy for 40km)
+          if ((workType === "presencial" || workType === "hibrido") && !isRemote) {
+            if (job.isReal && searchLocation !== "Brasil" && job.location) {
+              const city = searchLocation.split(",")[0].trim().toLowerCase();
+              const jobCity = job.location.toLowerCase();
+              // Allow if city name appears in job location, or if state matches (within region)
+              const stateMatch = searchLocation.includes(",") &&
+                jobCity.includes(searchLocation.split(",")[1]?.trim().toLowerCase() ?? "");
+              if (!jobCity.includes(city) && !stateMatch) return false;
+            }
+          }
+          return true;
+        })
+        .map(job => ({ ...job, matchReason: buildMatchReason(job, jobArea) }));
 
       // ── 2. LinkedIn parametrized URL (no scraping) ─────────────────────────
       const linkedInUrl = buildLinkedInSearchUrl({
         keywords: jobTitle,
-        location: location !== "Brasil" ? location : "Brazil",
+        location: isRemote ? "Brazil" : (searchLocation !== "Brasil" ? searchLocation : "Brazil"),
         seniorityLevel,
         workType,
       });
@@ -346,11 +378,13 @@ export const jobsRouter = router({
       const linkedInEntry: JobListing = {
         title: `${jobTitle} — Busca LinkedIn`,
         company: "Múltiplas empresas",
-        location: workType ? `${location} · ${workType}` : location,
+        location: isRemote ? "Remoto · Brasil" : (searchLocation !== "Brasil" ? searchLocation : "Brasil"),
         url: linkedInUrl,
         source: "LinkedIn",
-        description: "Link direto com filtros de cargo, localização e senioridade baseados no seu perfil.",
-        matchReason: "Filtros aplicados: última semana · ordenado por data recente · Easy Apply opcional",
+        description: isRemote
+          ? "Link de busca LinkedIn com filtro remoto — vagas de todo o Brasil."
+          : `Link de busca LinkedIn com filtros de cargo, localização (${searchLocation}) e senioridade.`,
+        matchReason: `Filtros: última semana · ordenado por data${workType ? ` · ${workType}` : ""}`,
         isReal: false,
       };
 
