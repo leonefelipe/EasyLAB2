@@ -61,11 +61,14 @@ const AnalysisResultSchema = z.object({
   salaryRange: z.object({
     cltMin: z.number(),
     cltMax: z.number(),
+    cltMedian: z.number(),
     pjMin: z.number(),
     pjMax: z.number(),
+    pjMedian: z.number(),
     currency: z.string(),
     confidence: z.enum(["high", "medium", "low"]),
     rationale: z.string(),
+    marketReferences: z.array(z.string()),
   }),
   negotiationTips: z.array(z.string()),
 
@@ -77,6 +80,9 @@ const AnalysisResultSchema = z.object({
     recruiterTriggers: z.array(z.string()),
     idealNarrative: z.string(),
   }),
+
+  // ── NEW: Clarification Questions (for incomplete/ambiguous CV data) ────────
+  clarificationQuestions: z.array(z.string()),
 });
 
 export type AnalysisResult = z.infer<typeof AnalysisResultSchema>;
@@ -89,8 +95,67 @@ async function scrapeJobUrl(url: string): Promise<string | null> {
     const urlObj = new URL(url);
     if (!urlObj.protocol.startsWith("http")) return null;
 
-    // LinkedIn blocks server-side scraping — skip immediately
-    if (urlObj.hostname.includes("linkedin.com")) return null;
+    // LinkedIn: try the public job detail endpoint before giving up.
+    // The /jobs/view/<id>/ page renders job info in JSON-LD that is sometimes
+    // accessible without authentication. We attempt it with a realistic UA and
+    // a short timeout, then fall back to returning null so the caller can show
+    // the "paste description" guidance.
+    if (urlObj.hostname.includes("linkedin.com")) {
+      try {
+        const liRes = await fetch(url, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            Accept: "text/html,application/xhtml+xml",
+            "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+          },
+          signal: AbortSignal.timeout(6000),
+        });
+
+        if (liRes.ok) {
+          const html = await liRes.text();
+
+          // Try JSON-LD first (most reliable when present)
+          const jsonLdMatch = html.match(
+            /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i
+          );
+          if (jsonLdMatch) {
+            try {
+              const ld = JSON.parse(jsonLdMatch[1]);
+              const desc =
+                ld.description ||
+                ld.jobDescription ||
+                (Array.isArray(ld["@graph"])
+                  ? ld["@graph"].find((n: Record<string,unknown>) => n.description)?.description
+                  : null);
+              if (desc && desc.length > 100) {
+                return String(desc)
+                  .replace(/<[^>]+>/g, " ")
+                  .replace(/\s{2,}/g, " ")
+                  .trim()
+                  .slice(0, 7000);
+              }
+            } catch { /* ignore parse errors */ }
+          }
+
+          // Fallback: look for the job description section in rendered HTML
+          const descMatch = html.match(
+            /class="[^"]*description[^"]*"[\s\S]{0,200}?>([\s\S]{200,5000}?)<\/div>/i
+          );
+          if (descMatch) {
+            const text = descMatch[1]
+              .replace(/<[^>]+>/g, " ")
+              .replace(/\s{2,}/g, " ")
+              .trim();
+            if (text.length > 100) return text.slice(0, 7000);
+          }
+        }
+      } catch { /* LinkedIn extraction failed — return null below */ }
+
+      // LinkedIn blocked or content unavailable — return null so caller
+      // shows the "paste description text" guidance
+      return null;
+    }
 
     const response = await fetch(url, {
       headers: {
@@ -322,13 +387,16 @@ const ANALYSIS_JSON_SCHEMA = {
       properties: {
         cltMin: { type: "number" },
         cltMax: { type: "number" },
+        cltMedian: { type: "number" },
         pjMin: { type: "number" },
         pjMax: { type: "number" },
+        pjMedian: { type: "number" },
         currency: { type: "string" },
         confidence: { type: "string", enum: ["high", "medium", "low"] },
         rationale: { type: "string" },
+        marketReferences: { type: "array", items: { type: "string" } },
       },
-      required: ["cltMin", "cltMax", "pjMin", "pjMax", "currency", "confidence", "rationale"],
+      required: ["cltMin", "cltMax", "cltMedian", "pjMin", "pjMax", "pjMedian", "currency", "confidence", "rationale", "marketReferences"],
       additionalProperties: false,
     },
     negotiationTips: { type: "array", items: { type: "string" } },
@@ -345,6 +413,8 @@ const ANALYSIS_JSON_SCHEMA = {
       required: ["companyType", "cultureSignals", "recruiterFears", "recruiterTriggers", "idealNarrative"],
       additionalProperties: false,
     },
+    // Clarification questions for incomplete CV data
+    clarificationQuestions: { type: "array", items: { type: "string" } },
   },
   required: [
     "matchScore", "projectedMatchScore", "jobTitle", "jobArea",
@@ -356,6 +426,7 @@ const ANALYSIS_JSON_SCHEMA = {
     "competitiveEdges", "competitiveRisks",
     "salaryRange", "negotiationTips",
     "recruiterProfile",
+    "clarificationQuestions",
   ],
   additionalProperties: false,
 } as const;
@@ -543,23 +614,35 @@ Output: competitiveEdges (array of 2-4 concrete differentiators) + competitiveRi
 
 Based on the role, industry, location (Brasil), and candidate's seniority/experience, provide:
 
-SALARY RANGE (Brazilian market, CLT and PJ where relevant):
-- Estimate based on: role title, seniority, industry sector, company size signals in the JD
-- Sources: Glassdoor BR, LinkedIn Salary Insights, Robert Half Salary Guide BR, Catho Salary Survey
-- Be honest about uncertainty — give a realistic range, not aspirational figures
-- Distinguish between CLT (with benefits) vs PJ (higher gross, no benefits)
+SALARY BENCHMARKING — use these market references:
+- Robert Half Salary Guide Brazil (most recent edition)
+- Michael Page Salary & Employment Survey Brazil
+- Catho Salary Survey (mercado brasileiro amplo)
+- Glassdoor BR and LinkedIn Salary Insights
 
-NEGOTIATION LEVERAGE — what gives THIS candidate pricing power?
-- Rare skills that increase market value
-- Cross-industry experience that commands premium
-- Quantified achievements that justify top-of-range positioning
+SALARY RANGE FORMAT (Brazilian market, 2025):
+- CLT range: gross monthly salary (bruto CLT), which includes FGTS, férias, 13º — package worth ~35% above net
+- PJ range: gross monthly invoice (NF PJ), no benefits — candidate pays INSS + IR + accounting fees (~25-30% effective cost)
+- Include market median (mediana de mercado) — the 50th percentile for this role/seniority/location
+- Confidence level: "high" if role/seniority/industry clearly match salary guide data; "medium" if inference required; "low" if unusual combination
 
-NEGOTIATION RISKS — what may pressure compensation down?
-- Employment gaps
-- Frequent job changes
-- Skills gaps vs. job requirements
+SALARY CALIBRATION ANCHORS (2025 BR market):
+- Júnior analyst (0-2y): R$3.000-6.000 CLT / R$4.500-8.000 PJ
+- Pleno analyst (2-5y): R$6.000-12.000 CLT / R$8.000-16.000 PJ
+- Sênior specialist (5-10y): R$10.000-20.000 CLT / R$14.000-28.000 PJ
+- Manager (8-15y, team): R$15.000-30.000 CLT / R$20.000-40.000 PJ
+- Director (12y+): R$30.000-60.000 CLT / R$40.000-80.000 PJ
+- Finance/Capital Markets premium: +20-40% above general market
+- Legal/Judicial roles premium: +15-30% above general market
+- Tech roles (São Paulo): +20-50% above general market
+- Real estate/Imóveis: generally 20-30% below corporate market, offset by commissions
 
-Format: salaryRange object with { cltMin, cltMax, pjMin, pjMax, currency: "BRL", confidence: "high|medium|low", rationale: string }
+WHAT DRIVES VALUE UP for this candidate:
+- Rare certifications (CPA-20, CFA, certifications with limited holders)
+- Capital markets / structured finance / project finance experience
+- Named company pedigree (ex-Banco do Brasil 26 anos = strong signal)
+
+Format: salaryRange object with { cltMin, cltMax, cltMedian, pjMin, pjMax, pjMedian, currency: "BRL", confidence: "high|medium|low", rationale: string, marketReferences: string[] }
 negotiationTips: array of 2-3 specific, actionable salary negotiation tips for THIS candidate
 
 ════════════════════════════════════════════════════════════
@@ -586,6 +669,32 @@ WHAT THIS RECRUITER FINDS IRRESISTIBLE:
 Output: recruiterProfile object with { companyType, cultureSignals, recruiterFears, recruiterTriggers, idealNarrative }
 
 ════════════════════════════════════════════════════════════
+  STEP 0 — MANDATORY NORMALIZATION BEFORE ANY REWRITING
+════════════════════════════════════════════════════════════
+
+Before ANY optimization, perform a silent normalization pass:
+
+EXTRACT from the original CV into structured buckets:
+  EXPERIENCES: [{role, company, start_month_year, end_month_year, description}]
+  EDUCATION: [{degree, institution, period}]
+  CERTIFICATIONS: [{name, issuer, expiry}]
+  LANGUAGES: [{language, level, certification}]
+  TECHNICAL_SKILLS: [only tools/skills explicitly named in CV text]
+  CORE_EXPERTISE: [only competencies traceable to actual job descriptions in CV]
+
+NORMALIZATION RULES:
+1. Every experience present in the original CV MUST appear in the optimized version — zero omissions.
+2. Experiences spanning 10+ years or representing the majority of the career MUST be preserved and PROMINENTLY featured, regardless of how different they are from the target job.
+3. Competencies may ONLY be extracted from: (a) explicit job descriptions in the CV, (b) named certifications, (c) direct statements by the candidate. If a competency cannot be traced to the original CV text, it MUST NOT appear.
+4. Certifications and languages MUST ALL be extracted and included in the optimized CV, exactly as written in the original — name, issuer, level, and expiry date.
+5. Timeline inference rules:
+   - If a role has month AND year → preserve exactly as written
+   - If a role has year only → keep the year, add clarification question (do NOT invent a month)
+   - If a current role has no start date → include in optimizedResume with "Data de início: a confirmar" and add clarification question
+   - Transition between roles: if Role A ended month/year and Role B started the following month/year, preserve both dates — do NOT infer or alter
+6. If critical information is incomplete or ambiguous (missing dates, unexplained gaps >6 months, truncated descriptions), populate the clarificationQuestions array instead of guessing.
+
+════════════════════════════════════════════════════════════
   ABSOLUTE LAW — NEVER VIOLATE UNDER ANY CIRCUMSTANCE
 ════════════════════════════════════════════════════════════
 
@@ -600,15 +709,19 @@ ABSOLUTE PROHIBITIONS:
 8. NEVER use tables or multiple columns
 9. NEVER overestimate the Match Score — strict honesty is non-negotiable
 10. NEVER invent keywords not present in the real job description
-11. NEVER omit experience or education present in the original
+11. NEVER omit any experience or education present in the original
+12. NEVER invent competencies — only reorganize and rewrite what the candidate already stated
+13. NEVER reduce or summarize long career experiences into a single line — each role deserves full treatment
+14. NEVER infer judicial or legal expertise unless the CV explicitly states it
 
 WHAT YOU CAN AND MUST DO:
 - Rewrite bullets transforming task language into impact language
 - Reorganize sections to maximize ATS weight
 - Replace weak verbs with strong action verbs
-- Surface hidden strengths already present in the resume
+- Surface hidden strengths ALREADY present in the resume text
 - Include synonyms for technical terms ALREADY present in the original
-- Adjust professional title to mirror the job (only when there is real correspondence)
+- Adjust professional title to mirror the job (only when there is real correspondence to actual experience)
+- For long careers (10+ years), create a "Resumo da Carreira" that highlights the full arc
 
 AUTO-VERIFICATION before returning:
 □ All dates are IDENTICAL to the original?
@@ -619,8 +732,12 @@ AUTO-VERIFICATION before returning:
 □ matchScore = exact sum of scoreBreakdown?
 □ atsScore = direct sum of all six atsScoreBreakdown components?
 □ Each improvedBullet.original actually exists (or closely resembles) a bullet in the resume?
+□ ALL certifications from the original appear in the optimized CV?
+□ ALL languages from the original appear in the optimized CV?
+□ ALL experiences from the original appear in the optimized CV (none omitted)?
 □ Header line 3 has ALL contact info (city, phone, email, LinkedIn) on ONE SINGLE LINE pipe-separated?
 □ optimizedResume is written in Brazilian Portuguese?
+□ clarificationQuestions populated for any incomplete/ambiguous information?
 IF ANY ANSWER IS NO → FIX BEFORE RETURNING.
 
 ════════════════════════════════════════════════════════════
@@ -740,13 +857,6 @@ export const resumeRouter = router({
       let scrapedSuccessfully = false;
       const isLinkedIn = isUrl(jobUrl.trim()) && new URL(jobUrl.trim()).hostname.includes("linkedin.com");
 
-      // LinkedIn blocks all server-side scraping — fail fast with a clear user-facing error
-      if (isLinkedIn) {
-        throw new Error(
-          "LinkedIn não permite leitura automática de vagas. Por favor, abra a vaga no LinkedIn, copie toda a descrição e cole aqui no lugar do link."
-        );
-      }
-
       if (isUrl(jobUrl.trim())) {
         const scraped = await scrapeJobUrl(jobUrl.trim());
         if (scraped && scraped.length > 200) {
@@ -755,11 +865,14 @@ export const resumeRouter = router({
         }
       }
 
+      // If LinkedIn URL but couldn't extract content, give the AI a signal
       const jobContext = scrapedSuccessfully
         ? "(content automatically extracted from the job site)"
-        : isUrl(jobUrl.trim())
-          ? "(URL provided — content could not be extracted; analyze based on URL signals and ask candidate to paste full description for best results)"
-          : "(job description provided by candidate)";
+        : isLinkedIn
+          ? "(LinkedIn job URL provided — content could not be extracted automatically; analyze based on URL job ID and any visible signals, and note in suggestions that the candidate should paste the full description for a more precise analysis)"
+          : isUrl(jobUrl.trim())
+            ? "(URL provided — content could not be extracted; analyze based on URL signals)"
+            : "(job description provided by candidate)";
 
       const userMessage = `CANDIDATE'S ORIGINAL RESUME (preserve ALL data exactly as-is — dates, companies, titles are sacred):
 ${resumeText}
@@ -773,109 +886,72 @@ ${jobContent}
 
 ANALYSIS INSTRUCTIONS:
 
-Execute your FOUR-LAYER analysis (ATS + Human Recruiter + Competitive Intelligence + Salary/Negotiation).
+STEP 0 — NORMALIZATION (silent, before anything else):
+Extract every experience, certification, language and skill into structured buckets.
+Flag incomplete/ambiguous data (missing start dates, unexplained gaps >6 months, year-only dates) → clarificationQuestions.
+NEVER omit any experience. NEVER invent any competency.
 
-1. Score the resume BEFORE optimization (matchScore = sum of scoreBreakdown components)
-2. Calculate elite atsScore = DIRECT SUM of all six atsScoreBreakdown components
-3. Identify ALL 15 Career Killers that apply to this specific resume
-4. Generate the optimized resume maintaining IDENTICAL factual data (dates, companies, titles)
-5. For improvedBullets: identify 3-5 weak bullets from the original and show STAR-method transformations
-6. List missingKeywords: exact terms from JD not present in resume
-7. projectedMatchScore MUST be >= matchScore (optimization can only improve, never worsen)
-8. COMPETITIVE INTELLIGENCE: analyze this candidate vs. the typical applicant pool for this role
-9. SALARY INTELLIGENCE: estimate realistic CLT and PJ ranges for Brazilian market based on role + seniority
-10. RECRUITER PROFILE: decode what the hiring manager fears and what triggers an immediate call
-11. Be rigorously honest — if compatibility is low, say so and explain the gap
-12. All text in Brazilian Portuguese except internationally adopted English terms
+STEP 1 — FOUR-LAYER ANALYSIS (ATS + Human Recruiter + Competitive + Salary):
+1. matchScore = sum of scoreBreakdown (BEFORE optimization)
+2. atsScore = DIRECT SUM of six atsScoreBreakdown components (DO NOT multiply by weights)
+3. Identify all 15 Career Killers present
+4. Generate optimizedResume — ALL experiences preserved, ALL certifications/languages included, ZERO inventions
+5. improvedBullets: 3-5 STAR rewrites of weak bullets ACTUALLY present in the original
+6. missingKeywords: exact JD terms not in resume
+7. projectedMatchScore >= matchScore
+8. clarificationQuestions: flag missing dates, unexplained gaps, incomplete information
+9. Salary: use Robert Half BR, Michael Page BR calibration anchors from system prompt, include cltMedian and pjMedian
+10. All text in Brazilian Portuguese
 
-Return ONLY valid JSON. No markdown, no text outside JSON.
+Return ONLY valid JSON. No markdown outside JSON.
 
 JSON structure:
 {
-  "matchScore": <sum of scoreBreakdown — ORIGINAL score before optimization>,
-  "projectedMatchScore": <realistic score AFTER optimization — always >= matchScore>,
+  "matchScore": <sum of scoreBreakdown>,
+  "projectedMatchScore": <>= matchScore>,
   "jobTitle": "<exact job title from JD>",
-  "jobArea": "<specific area in Portuguese: e.g. Desenvolvimento Backend Node.js, Vendas B2B SaaS, Gestão de Pessoas no Varejo>",
-  "keywords": [<12-14 most critical JD keywords in order of importance>],
-  "suggestions": [<5-8 specific, honest, actionable suggestions — format: [AÇÃO] — [POR QUE prejudica] — [COMO corrigir passo a passo]>],
-  "optimizedResume": "<full optimized resume — PLAIN TEXT with \\n breaks — ZERO emojis/asterisks/markdown — dates/companies/titles IDENTICAL to original — in Brazilian Portuguese>",
-  "changes": [
-    {
-      "section": "<exact section changed>",
-      "description": "<what was wrong, what was fixed, why it impacts ATS AND recruiter — specific to THIS candidate>",
-      "impact": "<alto | medio | baixo>"
-    }
-  ],
-  "coverLetterPoints": [
-    "<point 1: connects candidate's trajectory with this company/job's main pain point>",
-    "<point 2: candidate's most relevant differentiator for this position>",
-    "<point 3: achievement or result that most impresses for this context>"
-  ],
-  "gapAnalysis": [<honest list of real gaps between candidate profile and job — can be [] if high compatibility>],
-  "scoreBreakdown": {
-    "technicalSkills": <0-30>,
-    "experience": <0-30>,
-    "keywords": <0-20>,
-    "tools": <0-10>,
-    "seniority": <0-10>
-  },
-  "atsScore": <DIRECT SUM of the six atsScoreBreakdown components>,
-  "atsScoreBreakdown": {
-    "parsing": <0-20>,
-    "keywordMatch": <0-25>,
-    "experienceQuality": <0-20>,
-    "impactMetrics": <0-15>,
-    "formatting": <0-10>,
-    "skillsAlignment": <0-10>
-  },
-  "strengths": [<3-5 specific strengths of this resume for this job>],
-  "weaknesses": [<3-5 specific weaknesses to address>],
-  "missingKeywords": [<exact keywords from JD not found in resume>],
-  "improvedBullets": [
-    {
-      "original": "<exact weak bullet from the resume>",
-      "improved": "<STAR-method rewrite with action verb + scale + result — in Portuguese>",
-      "reason": "<why this bullet was weak and what makes the improved version stronger>"
-    }
-  ],
-  "recruiterInsights": [<3-5 insights a senior recruiter would note about this candidate for this specific role>],
-  "seniorityLevel": "<Júnior | Pleno | Sênior | Gerente | Diretor | C-Level>",
-  "careerTrajectory": "<2-3 sentence narrative of candidate's career progression and positioning — in Portuguese>",
-  "formattingIssues": [<list of specific ATS-hostile formatting elements detected — empty [] if none>],
-
-  "competitiveEdges": [
-    "<2-4 concrete differentiators vs. the typical applicant pool — specific to THIS candidate and THIS role>",
-    "<e.g.: 'Combinação de 18 anos em vendas B2B + recrutamento é rara no pool de candidatos para Talent Acquisition — a maioria vem só de RH'>"
-  ],
-  "competitiveRisks": [
-    "<1-3 risks where other candidates may have an edge — honest and specific>",
-    "<e.g.: 'Candidatos mais jovens podem ter certificações ATS mais recentes (Gupy Certification, SAP SuccessFactors)'>"
-  ],
-
+  "jobArea": "<área específica em português>",
+  "keywords": [<12-14 keywords mais críticos da vaga>],
+  "suggestions": [<5-8 sugestões — formato: [AÇÃO] — [POR QUE prejudica] — [COMO corrigir]>],
+  "optimizedResume": "<CV completo — PLAIN TEXT — \\n — ZERO markdown — TODAS as experiências preservadas — PT-BR>",
+  "changes": [{"section": "...", "description": "...", "impact": "alto|medio|baixo"}],
+  "coverLetterPoints": ["<3 pontos conectando candidato a esta vaga específica>"],
+  "gapAnalysis": [<gaps honestos — [] se alta compatibilidade>],
+  "scoreBreakdown": {"technicalSkills": <0-30>, "experience": <0-30>, "keywords": <0-20>, "tools": <0-10>, "seniority": <0-10>},
+  "atsScore": <SOMA DIRETA dos seis componentes atsScoreBreakdown>,
+  "atsScoreBreakdown": {"parsing": <0-20>, "keywordMatch": <0-25>, "experienceQuality": <0-20>, "impactMetrics": <0-15>, "formatting": <0-10>, "skillsAlignment": <0-10>},
+  "strengths": [<3-5 pontos fortes específicos>],
+  "weaknesses": [<3-5 pontos a melhorar>],
+  "missingKeywords": [<keywords da vaga ausentes no CV>],
+  "improvedBullets": [{"original": "<bullet exato do CV>", "improved": "<reescrita STAR em PT-BR>", "reason": "<por que era fraco>"}],
+  "recruiterInsights": [<3-5 insights de recrutador sênior>],
+  "seniorityLevel": "<Júnior|Pleno|Sênior|Gerente|Diretor|C-Level>",
+  "careerTrajectory": "<narrativa 2-3 frases em PT-BR>",
+  "formattingIssues": [<problemas ATS detectados — [] se nenhum>],
+  "competitiveEdges": [<2-4 diferenciais concretos vs pool típico de candidatos>],
+  "competitiveRisks": [<1-3 riscos onde outros candidatos podem ter vantagem>],
   "salaryRange": {
-    "cltMin": <realistic CLT minimum in BRL — integer, no decimals>,
-    "cltMax": <realistic CLT maximum in BRL — integer, no decimals>,
-    "pjMin": <realistic PJ minimum in BRL — integer, no decimals, gross>,
-    "pjMax": <realistic PJ maximum in BRL — integer, no decimals, gross>,
+    "cltMin": <inteiro BRL>, "cltMax": <inteiro BRL>, "cltMedian": <inteiro BRL>,
+    "pjMin": <inteiro BRL>, "pjMax": <inteiro BRL>, "pjMedian": <inteiro BRL>,
     "currency": "BRL",
-    "confidence": "<high | medium | low — based on how much salary data is inferable from the JD>",
-    "rationale": "<2-3 sentences explaining the range: what drives value up, what presses it down, market context>"
+    "confidence": "high|medium|low",
+    "rationale": "<2-3 frases: contexto de mercado, referências Robert Half/Michael Page, drivers de valor>",
+    "marketReferences": ["<ex: Robert Half Salary Guide BR 2025 — Finanças Sênior>", "<Michael Page BR...>"]
   },
-  "negotiationTips": [
-    "<2-3 specific, actionable salary negotiation tips tailored to THIS candidate's strengths and gaps>"
-  ],
-
+  "negotiationTips": [<2-3 dicas específicas para ESTE candidato>],
   "recruiterProfile": {
-    "companyType": "<startup | scale-up | corporativo | tradicional | consultoria | agência>",
-    "cultureSignals": "<2-3 sentences: what the JD language reveals about the culture and what they value>",
-    "recruiterFears": [
-      "<2-3 specific fears this recruiter has based on the JD — what bad hires or problems are they trying to avoid?>"
-    ],
-    "recruiterTriggers": [
-      "<2-3 specific triggers that will make THIS recruiter immediately excited — based on JD signals>"
-    ],
-    "idealNarrative": "<The one-paragraph story this recruiter wants the candidate to tell — what arc, what proof points, what tone>"
-  }
+    "companyType": "<startup|scale-up|corporativo|tradicional|consultoria|agência>",
+    "cultureSignals": "<análise de cultura baseada na linguagem da vaga>",
+    "recruiterFears": [<2-3 medos específicos baseados na vaga>],
+    "recruiterTriggers": [<2-3 gatilhos que animam ESTE recrutador>],
+    "idealNarrative": "<parágrafo: a história que este recrutador quer ouvir>"
+  },
+  "clarificationQuestions": [
+    "<Apenas para dados genuinamente incompletos/ambíguos NESTE CV>",
+    "<ex: 'Qual mês e ano iniciou a atividade atual como Corretor/Perito Judicial?'>",
+    "<ex: 'Quais funções exerceu no Banco do Brasil entre março/1999 e dezembro/2004?'>",
+    "<[] se todas as informações estão completas>"
+  ]
 }`;
 
       const response = await invokeLLM({
