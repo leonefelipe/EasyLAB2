@@ -78,11 +78,12 @@ interface AnalysisResult {
   competitiveRisks?: string[];
   // NEW: Salary Intelligence
   salaryRange?: {
-    cltMin: number; cltMax: number;
-    pjMin: number; pjMax: number;
+    cltMin: number; cltMax: number; cltMedian?: number;
+    pjMin: number; pjMax: number; pjMedian?: number;
     currency: string;
     confidence: "high" | "medium" | "low";
     rationale: string;
+    marketReferences?: string[];
   };
   negotiationTips?: string[];
   // NEW: Recruiter Profile
@@ -93,6 +94,8 @@ interface AnalysisResult {
     recruiterTriggers: string[];
     idealNarrative: string;
   };
+  // NEW: Clarification Questions
+  clarificationQuestions?: string[];
 }
 
 interface SavedCV {
@@ -503,6 +506,7 @@ export default function Home() {
   // Vagas aderentes
   const [jobListings, setJobListings] = useState<JobListing[]>([]);
   const [isSearchingJobs, setIsSearchingJobs] = useState(false);
+  const [workTypePreference, setWorkTypePreference] = useState<"remoto" | "hibrido" | "presencial" | "sem_preferencia">("sem_preferencia");
 
   // Load saved state on mount
   useEffect(() => {
@@ -688,12 +692,16 @@ export default function Home() {
   const handleSearchJobs = () => {
     if (!results) return;
     setIsSearchingJobs(true);
+    // Extract city from optimized resume header if available
+    const cityMatch = results.optimizedResume?.match(/([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)*),\s*[A-Z]{2}/);
+    const candidateCity = cityMatch ? cityMatch[0] : "Brasil";
     searchJobsMutation.mutate({
       jobTitle: results.jobTitle || "Profissional",
       jobArea: results.jobArea || "Geral",
       keywords: results.keywords || [],
-      location: "Brasil",
+      location: candidateCity,
       seniorityLevel: results.seniorityLevel || "Pleno",
+      workType: workTypePreference === "sem_preferencia" ? undefined : workTypePreference,
     });
   };
 
@@ -912,16 +920,17 @@ export default function Home() {
             onChange={e => setJobUrl(e.target.value)}
             className={`min-h-28 ${isDarkMode ? "bg-slate-700 border-slate-600 text-white placeholder:text-slate-400" : "bg-slate-50 border-slate-300 text-slate-900 placeholder:text-slate-400"}`}
           />
-          {/* LinkedIn warning */}
+          {/* LinkedIn info */}
           {(() => {
             try {
               const u = new URL(jobUrl.trim());
               if (u.hostname.includes("linkedin.com")) {
                 return (
-                  <div className="flex items-start gap-3 mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-                    <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <div className="flex items-start gap-3 mt-3 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-sm">
+                    <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
                     <span>
-                      <strong>LinkedIn não permite leitura automática.</strong> Para uma análise precisa, abra a vaga, selecione toda a descrição e cole o texto aqui no lugar do link.
+                      Link do LinkedIn detectado. O sistema tentará extrair a descrição automaticamente.
+                      Se a análise ficar genérica, abra a vaga, copie toda a descrição e cole o texto aqui.
                     </span>
                   </div>
                 );
@@ -1559,32 +1568,97 @@ export default function Home() {
                         Confiança: {results.salaryRange.confidence === "high" ? "Alta" : results.salaryRange.confidence === "medium" ? "Média" : "Baixa"}
                       </span>
                     </div>
-                    <p className={`text-sm mt-0.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Faixas estimadas para o mercado brasileiro · {new Date().getFullYear()}</p>
+                    <p className={`text-sm mt-0.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                      Estimativa baseada em Robert Half, Michael Page e mercado BR · {new Date().getFullYear()}
+                    </p>
                   </div>
                 </div>
+
+                {/* CLT + PJ range cards with median indicator */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+                  {/* CLT */}
                   <div className={`rounded-xl p-5 border ${isDarkMode ? "bg-slate-700/60 border-slate-600" : "bg-white border-violet-200"}`}>
-                    <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${isDarkMode ? "text-violet-400" : "text-violet-600"}`}>CLT (com benefícios)</p>
-                    <p className={`text-2xl font-black ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+                    <p className={`text-xs font-bold uppercase tracking-wider mb-2 ${isDarkMode ? "text-violet-400" : "text-violet-600"}`}>CLT · com benefícios</p>
+                    <p className={`text-2xl font-black mb-1 ${isDarkMode ? "text-white" : "text-slate-900"}`}>
                       R$ {results.salaryRange.cltMin.toLocaleString("pt-BR")}
-                      <span className={`text-base font-normal mx-1 ${isDarkMode ? "text-slate-400" : "text-slate-400"}`}>–</span>
+                      <span className="text-base font-normal mx-1 text-slate-400">–</span>
                       R$ {results.salaryRange.cltMax.toLocaleString("pt-BR")}
                     </p>
-                    <p className={`text-xs mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>bruto mensal</p>
+                    {(results.salaryRange as any).cltMedian && (
+                      <p className={`text-xs ${isDarkMode ? "text-violet-300" : "text-violet-600"}`}>
+                        Mediana do mercado: <strong>R$ {(results.salaryRange as any).cltMedian.toLocaleString("pt-BR")}</strong>
+                      </p>
+                    )}
+                    {/* Range bar with median marker */}
+                    {(results.salaryRange as any).cltMedian && (() => {
+                      const min = results.salaryRange.cltMin;
+                      const max = results.salaryRange.cltMax;
+                      const med = (results.salaryRange as any).cltMedian;
+                      const pct = Math.round(((med - min) / (max - min)) * 100);
+                      return (
+                        <div className="mt-3 relative h-2 rounded-full bg-slate-200">
+                          <div className="absolute h-2 rounded-full bg-violet-400/50" style={{ width: "100%" }} />
+                          <div
+                            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-violet-600 border-2 border-white shadow"
+                            style={{ left: `calc(${pct}% - 6px)` }}
+                            title={`Mediana: R$ ${med.toLocaleString("pt-BR")}`}
+                          />
+                        </div>
+                      );
+                    })()}
+                    <p className={`text-xs mt-2 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>bruto mensal · inclui FGTS, férias, 13º</p>
                   </div>
+
+                  {/* PJ */}
                   <div className={`rounded-xl p-5 border ${isDarkMode ? "bg-slate-700/60 border-slate-600" : "bg-white border-violet-200"}`}>
-                    <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${isDarkMode ? "text-violet-400" : "text-violet-600"}`}>PJ (sem benefícios)</p>
-                    <p className={`text-2xl font-black ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+                    <p className={`text-xs font-bold uppercase tracking-wider mb-2 ${isDarkMode ? "text-violet-400" : "text-violet-600"}`}>PJ · sem benefícios</p>
+                    <p className={`text-2xl font-black mb-1 ${isDarkMode ? "text-white" : "text-slate-900"}`}>
                       R$ {results.salaryRange.pjMin.toLocaleString("pt-BR")}
-                      <span className={`text-base font-normal mx-1 ${isDarkMode ? "text-slate-400" : "text-slate-400"}`}>–</span>
+                      <span className="text-base font-normal mx-1 text-slate-400">–</span>
                       R$ {results.salaryRange.pjMax.toLocaleString("pt-BR")}
                     </p>
-                    <p className={`text-xs mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>bruto mensal</p>
+                    {(results.salaryRange as any).pjMedian && (
+                      <p className={`text-xs ${isDarkMode ? "text-violet-300" : "text-violet-600"}`}>
+                        Mediana do mercado: <strong>R$ {(results.salaryRange as any).pjMedian.toLocaleString("pt-BR")}</strong>
+                      </p>
+                    )}
+                    {(results.salaryRange as any).pjMedian && (() => {
+                      const min = results.salaryRange.pjMin;
+                      const max = results.salaryRange.pjMax;
+                      const med = (results.salaryRange as any).pjMedian;
+                      const pct = Math.round(((med - min) / (max - min)) * 100);
+                      return (
+                        <div className="mt-3 relative h-2 rounded-full bg-slate-200">
+                          <div className="absolute h-2 rounded-full bg-violet-400/50" style={{ width: "100%" }} />
+                          <div
+                            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-violet-600 border-2 border-white shadow"
+                            style={{ left: `calc(${pct}% - 6px)` }}
+                            title={`Mediana: R$ ${med.toLocaleString("pt-BR")}`}
+                          />
+                        </div>
+                      );
+                    })()}
+                    <p className={`text-xs mt-2 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>bruto mensal · desconte INSS + IR + contador (~25-30%)</p>
                   </div>
                 </div>
-                <p className={`text-sm leading-relaxed mb-5 p-4 rounded-lg ${isDarkMode ? "bg-slate-700/40 text-slate-300" : "bg-violet-50/60 text-slate-600"}`}>
+
+                {/* Rationale */}
+                <p className={`text-sm leading-relaxed mb-4 p-4 rounded-lg ${isDarkMode ? "bg-slate-700/40 text-slate-300" : "bg-violet-50/60 text-slate-600"}`}>
                   {results.salaryRange.rationale}
                 </p>
+
+                {/* Market references */}
+                {(results.salaryRange as any).marketReferences?.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-5">
+                    {(results.salaryRange as any).marketReferences.map((ref: string, i: number) => (
+                      <span key={i} className={`text-xs px-2.5 py-1 rounded-full border ${isDarkMode ? "border-slate-600 text-slate-400" : "border-slate-200 text-slate-500"}`}>
+                        📊 {ref}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Negotiation tips */}
                 {results.negotiationTips && results.negotiationTips.length > 0 && (
                   <div>
                     <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${isDarkMode ? "text-violet-400" : "text-violet-700"}`}>Dicas de negociação para seu perfil</p>
@@ -1663,6 +1737,34 @@ export default function Home() {
               </Card>
             )}
 
+            {/* ── PERGUNTAS A ESCLARECER ──────────────────────────────────── */}
+            {(results as any).clarificationQuestions?.length > 0 && (
+              <Card className={`p-8 border-2 ${isDarkMode ? "bg-slate-800 border-amber-700/40" : "border-amber-200 bg-gradient-to-br from-amber-50/50 to-white"}`}>
+                <div className="flex items-start gap-4 mb-6">
+                  <div className="w-12 h-12 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                    <AlertTriangle className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>Perguntas a Esclarecer</h3>
+                    <p className={`text-sm mt-0.5 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                      O sistema identificou informações incompletas ou ambíguas no currículo. Responda para garantir uma análise mais precisa.
+                    </p>
+                  </div>
+                </div>
+                <ul className="space-y-3">
+                  {(results as any).clarificationQuestions.map((q: string, i: number) => (
+                    <li key={i} className={`flex gap-3 p-4 rounded-lg border ${isDarkMode ? "bg-amber-900/10 border-amber-700/30" : "bg-amber-50 border-amber-200"}`}>
+                      <span className={`text-sm font-bold flex-shrink-0 mt-0.5 ${isDarkMode ? "text-amber-400" : "text-amber-600"}`}>{i + 1}.</span>
+                      <p className={`text-sm leading-relaxed ${isDarkMode ? "text-slate-300" : "text-slate-700"}`}>{q}</p>
+                    </li>
+                  ))}
+                </ul>
+                <p className={`text-xs mt-4 ${isDarkMode ? "text-slate-500" : "text-slate-400"}`}>
+                  Dica: após responder estas perguntas, você pode refazer a análise com a descrição do CV atualizada para obter um currículo otimizado mais preciso.
+                </p>
+              </Card>
+            )}
+
             {/* Vagas Aderentes */}
             <Card className={`p-8 border-2 ${isDarkMode ? "bg-slate-800 border-slate-700" : "border-slate-200"}`}>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
@@ -1672,7 +1774,7 @@ export default function Home() {
                   </div>
                   <div>
                     <h3 className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>Vagas Aderentes</h3>
-                    <p className={`text-sm mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Vagas do Brasil compatíveis com seu perfil em múltiplos sites</p>
+                    <p className={`text-sm mt-1 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Vagas reais compatíveis com seu perfil — Gupy, Vagas.com.br, LinkedIn e outros</p>
                   </div>
                 </div>
                 <Button
@@ -1682,6 +1784,43 @@ export default function Home() {
                 >
                   {isSearchingJobs ? <><Loader2 className="w-4 h-4 animate-spin" /> Buscando vagas...</> : <><Search className="w-4 h-4" /> Buscar Vagas</>}
                 </Button>
+              </div>
+
+              {/* Work type preference selector */}
+              <div className="mb-5">
+                <p className={`text-xs font-bold uppercase tracking-wider mb-2 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Preferência de modalidade</p>
+                <div className="flex gap-2 flex-wrap">
+                  {(["sem_preferencia", "remoto", "hibrido", "presencial"] as const).map(opt => {
+                    const labels: Record<string, string> = {
+                      sem_preferencia: "Sem preferência",
+                      remoto: "🏠 Remoto",
+                      hibrido: "🔀 Híbrido",
+                      presencial: "🏢 Presencial",
+                    };
+                    return (
+                      <button
+                        key={opt}
+                        onClick={() => setWorkTypePreference(opt)}
+                        className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                          workTypePreference === opt
+                            ? isDarkMode
+                              ? "bg-blue-700 border-blue-600 text-white"
+                              : "bg-blue-900 border-blue-900 text-white"
+                            : isDarkMode
+                              ? "bg-slate-700 border-slate-600 text-slate-300 hover:border-blue-500"
+                              : "bg-white border-slate-300 text-slate-600 hover:border-blue-400"
+                        }`}
+                      >
+                        {labels[opt]}
+                      </button>
+                    );
+                  })}
+                </div>
+                {workTypePreference === "presencial" || workTypePreference === "hibrido" ? (
+                  <p className={`text-xs mt-2 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
+                    Para presencial/híbrido, vagas filtradas pela cidade do candidato extraída do CV.
+                  </p>
+                ) : null}
               </div>
 
               {isSearchingJobs && (
