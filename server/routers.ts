@@ -6,7 +6,7 @@ import { resumeRouter } from "./resumeRouter";
 import { pdfRouter } from "./pdfRouter";
 import { translateRouter } from "./translateRouter";
 import { jobsRouter } from "./jobsRouter";
-import { linkedinRouter } from "./linkedinRouter";
+import { linkedinRouter } from "./linkedInRouter";
 import { linkedinParserRouter } from "./linkedinParser";
 
 export const appRouter = router({
