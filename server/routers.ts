@@ -8,6 +8,8 @@ import { translateRouter } from "./translateRouter";
 import { jobsRouter } from "./jobsRouter";
 import { linkedinRouter } from "./linkedInRouter";
 import { linkedinParserRouter } from "./linkedinParser";
+import { salaryRouter } from "./salaryRouter";
+import { linkedinJobExtractorRouter } from "./linkedinJobExtractor";
 
 export const appRouter = router({
   system: systemRouter,
@@ -26,6 +28,8 @@ export const appRouter = router({
   jobs: jobsRouter,
   linkedin: linkedinRouter,
   linkedinParser: linkedinParserRouter,
+  salary: salaryRouter,
+  jobExtractor: linkedinJobExtractorRouter,
 });
 
 export type AppRouter = typeof appRouter;
