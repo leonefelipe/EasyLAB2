@@ -1,110 +1,129 @@
 /**
- * Serviço de extração de texto de diferentes formatos de arquivo
- * Suporta: PDF, DOCX, TXT
+ * Extração de texto de currículos — PDF, DOCX, TXT
+ *
+ * DOCX: usa mammoth (biblioteca dedicada a DOCX → texto limpo, preserva
+ *       estrutura de parágrafos, bullets e datas sem perder conteúdo).
+ *
+ * PDF:  usa pdfjs-dist com estratégia de reconstrução de linhas que preserva
+ *       ordem de leitura, seções, bullets e datas.
+ *
+ * A extração anterior de DOCX era um regex de strip de XML que perdia toda a
+ * estrutura. A nova usa mammoth, que entende o modelo semântico do Word.
  */
 
 import * as pdfjsLib from "pdfjs-dist";
+import mammoth from "mammoth";
 
-// Set up the worker for PDF.js
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Worker do PDF.js via CDN
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
+// ─── PDF ─────────────────────────────────────────────────────────────────────
 
 /**
- * Extrai texto de um arquivo PDF
+ * Reconstrói o texto de cada página preservando linhas e seções.
+ * O pdfjs retorna spans com coordenadas Y; agrupa-os por proximidade vertical
+ * para reconstruir linhas naturais em vez de um blob contínuo.
  */
 export async function extractTextFromPDF(file: File): Promise<string> {
-  try {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let fullText = "";
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(" ");
-      fullText += pageText + "\n";
+  const pages: string[] = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const { items } = await page.getTextContent();
+
+    // Group items into lines by Y position (tolerance ±3px)
+    type PdfItem = { str: string; transform: number[] };
+    const lines: Map<number, string[]> = new Map();
+
+    for (const raw of items) {
+      const item = raw as PdfItem;
+      if (!item.str.trim()) continue;
+      const y = Math.round(item.transform[5] / 3) * 3; // bucket to 3px grid
+      if (!lines.has(y)) lines.set(y, []);
+      lines.get(y)!.push(item.str);
     }
 
-    return fullText;
-  } catch (error) {
-    console.error("Erro ao extrair PDF:", error);
-    throw new Error("Falha ao extrair texto do PDF");
+    // Sort lines top→bottom (higher Y = higher on page in PDF coords)
+    const sorted = [...lines.entries()]
+      .sort((a, b) => b[0] - a[0])
+      .map(([, words]) => words.join(" ").trim())
+      .filter(Boolean);
+
+    pages.push(sorted.join("\n"));
   }
+
+  const result = pages.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+
+  if (!result || result.length < 50) {
+    throw new Error(
+      "O PDF parece ser uma imagem escaneada ou está protegido. Por favor, converta para DOCX ou copie o texto manualmente."
+    );
+  }
+
+  return result;
 }
 
+// ─── DOCX ─────────────────────────────────────────────────────────────────────
+
 /**
- * Extrai texto de um arquivo DOCX
- * Nota: Implementação simplificada que lê o conteúdo XML do DOCX
+ * Usa mammoth para extrair texto limpo do DOCX.
+ * mammoth entende o modelo semântico Word (parágrafos, listas, títulos)
+ * e produz texto com quebras de linha naturais — muito melhor que strip XML.
  */
 export async function extractTextFromDOCX(file: File): Promise<string> {
-  try {
-    const arrayBuffer = await file.arrayBuffer();
-    const zip = new (await import("jszip")).default();
-    await zip.loadAsync(arrayBuffer);
+  const arrayBuffer = await file.arrayBuffer();
 
-    // Lê o arquivo document.xml que contém o conteúdo do documento
-    const documentXml = await zip.file("word/document.xml")?.async("text");
+  // mammoth.extractRawText preserves paragraph breaks without HTML conversion
+  const result = await mammoth.extractRawText({ arrayBuffer });
 
-    if (!documentXml) {
-      throw new Error("Arquivo DOCX inválido");
-    }
-
-    // Remove tags XML e extrai apenas o texto
-    const text = documentXml
-      .replace(/<[^>]*>/g, " ") // Remove tags XML
-      .replace(/&nbsp;/g, " ") // Substitui nbsp
-      .replace(/&amp;/g, "&") // Substitui &
-      .replace(/&lt;/g, "<") // Substitui <
-      .replace(/&gt;/g, ">") // Substitui >
-      .replace(/\s+/g, " ") // Remove espaços múltiplos
-      .trim();
-
-    return text;
-  } catch (error) {
-    console.error("Erro ao extrair DOCX:", error);
-    throw new Error("Falha ao extrair texto do DOCX");
+  if (result.messages.length > 0) {
+    // Non-fatal warnings — log but don't throw
+    console.warn("Avisos ao processar DOCX:", result.messages);
   }
+
+  const text = result.value
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\n{4,}/g, "\n\n\n") // max 3 consecutive blank lines
+    .trim();
+
+  if (!text || text.length < 50) {
+    throw new Error("Não foi possível extrair texto do DOCX. Verifique se o arquivo não está corrompido.");
+  }
+
+  return text;
 }
 
-/**
- * Extrai texto de um arquivo TXT
- */
+// ─── TXT ──────────────────────────────────────────────────────────────────────
+
 export async function extractTextFromTXT(file: File): Promise<string> {
-  try {
-    const text = await file.text();
-    return text;
-  } catch (error) {
-    console.error("Erro ao extrair TXT:", error);
-    throw new Error("Falha ao extrair texto do TXT");
-  }
+  return file.text();
 }
 
-/**
- * Função principal que detecta o tipo de arquivo e extrai o texto
- */
-export async function extractTextFromFile(file: File): Promise<string> {
-  const fileType = file.type;
-  const fileName = file.name.toLowerCase();
+// ─── Router ───────────────────────────────────────────────────────────────────
 
-  try {
-    if (fileType === "application/pdf" || fileName.endsWith(".pdf")) {
-      return await extractTextFromPDF(file);
-    } else if (
-      fileType ===
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-      fileName.endsWith(".docx")
-    ) {
-      return await extractTextFromDOCX(file);
-    } else if (fileType === "text/plain" || fileName.endsWith(".txt")) {
-      return await extractTextFromTXT(file);
-    } else {
-      throw new Error(
-        "Formato de arquivo não suportado. Use PDF, DOCX ou TXT."
-      );
-    }
-  } catch (error) {
-    console.error("Erro ao extrair arquivo:", error);
-    throw error;
+export async function extractTextFromFile(file: File): Promise<string> {
+  const name = file.name.toLowerCase();
+  const type = file.type;
+
+  if (type === "application/pdf" || name.endsWith(".pdf")) {
+    return extractTextFromPDF(file);
   }
+
+  if (
+    type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    name.endsWith(".docx")
+  ) {
+    return extractTextFromDOCX(file);
+  }
+
+  if (type === "text/plain" || name.endsWith(".txt")) {
+    return extractTextFromTXT(file);
+  }
+
+  throw new Error("Formato não suportado. Use PDF, DOCX ou TXT.");
 }
