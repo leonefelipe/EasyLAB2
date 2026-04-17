@@ -6,10 +6,8 @@ import { resumeRouter } from "./resumeRouter";
 import { pdfRouter } from "./pdfRouter";
 import { translateRouter } from "./translateRouter";
 import { jobsRouter } from "./jobsRouter";
-import { linkedinRouter } from "./linkedInRouter";
-import { linkedinParserRouter } from "./linkedinParser";
-import { salaryRouter } from "./salaryRouter";
-import { linkedinJobExtractorRouter } from "./linkedinJobExtractor";
+import { linkedInRouter } from "./linkedInRouter";
+import { jobExtractorRouter } from "./jobExtractorRouter";
 
 export const appRouter = router({
   system: systemRouter,
@@ -26,10 +24,8 @@ export const appRouter = router({
   pdf: pdfRouter,
   translate: translateRouter,
   jobs: jobsRouter,
-  linkedin: linkedinRouter,
-  linkedinParser: linkedinParserRouter,
-  salary: salaryRouter,
-  jobExtractor: linkedinJobExtractorRouter,
+  linkedin: linkedInRouter,
+  jobExtractor: jobExtractorRouter,
 });
 
 export type AppRouter = typeof appRouter;
