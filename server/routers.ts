@@ -6,7 +6,7 @@ import { resumeRouter } from "./resumeRouter";
 import { pdfRouter } from "./pdfRouter";
 import { translateRouter } from "./translateRouter";
 import { jobsRouter } from "./jobsRouter";
-import { linkedInRouter } from "./linkedInRouter";
+import { linkedinRouter } from "./linkedInRouter";
 import { jobExtractorRouter } from "./jobExtractorRouter";
 
 export const appRouter = router({
@@ -24,7 +24,7 @@ export const appRouter = router({
   pdf: pdfRouter,
   translate: translateRouter,
   jobs: jobsRouter,
-  linkedin: linkedInRouter,
+  linkedin: linkedinRouter,
   jobExtractor: jobExtractorRouter,
 });
 
