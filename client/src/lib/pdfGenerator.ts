@@ -1,283 +1,270 @@
-// pdfGenerator.js
-const puppeteer = require('puppeteer');
-
 /**
- * Renders a resume object into a clean, ATS-friendly PDF buffer.
- * No watermarks. No branding. Professional layout.
+ * pdfGenerator.ts
+ * Client-side resume PDF generator — jsPDF + html2canvas.
+ * Zero watermarks. ATS-friendly. Google/Amazon/Microsoft resume style.
  *
- * @param {Object} resume
- * @param {string} resume.name
- * @param {string} resume.email
- * @param {string} resume.phone
- * @param {string} resume.location
- * @param {string} resume.linkedin
- * @param {string} resume.github
- * @param {string} resume.summary
- * @param {Array}  resume.experience  [{ title, company, location, startDate, endDate, bullets[] }]
- * @param {Array}  resume.education   [{ degree, institution, location, graduation }]
- * @param {Array}  resume.skills      [{ category, items[] }]
- * @param {Array}  resume.projects    [{ name, description, technologies, bullets[] }]
- * @returns {Promise<Buffer>} PDF buffer
+ * Signature expected by AnalysisLayout.tsx:
+ *   generateResumePDF(resumeText: string, lang: "pt" | "en"): void
  */
-async function generateResumePDF(resume) {
-  const html = buildResumeHTML(resume);
 
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-  });
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
-  try {
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    await page.emulateMediaType('print');
+// ─── Section header detection ────────────────────────────────────────────────
 
-    const pdfBuffer = await page.pdf({
-      format: 'Letter',
-      printBackground: false,
-      displayHeaderFooter: false,   // ← kills any header/footer watermarks
-      margin: { top: '0.65in', bottom: '0.65in', left: '0.7in', right: '0.7in' },
-    });
+const SECTION_HEADERS_PT = [
+  "RESUMO PROFISSIONAL", "COMPETÊNCIAS PRINCIPAIS", "COMPETENCIAS PRINCIPAIS",
+  "EXPERIÊNCIA PROFISSIONAL", "EXPERIENCIA PROFISSIONAL",
+  "FORMAÇÃO ACADÊMICA", "FORMAÇÃO ACADÊMICA", "FORMACAO ACADEMICA",
+  "IDIOMAS", "CERTIFICAÇÕES", "CERTIFICACOES", "HABILIDADES",
+  "CURSOS", "INFORMAÇÕES ADICIONAIS", "INFORMACOES ADICIONAIS",
+  "PUBLICAÇÕES", "PUBLICACOES", "VOLUNTARIADO",
+];
+const SECTION_HEADERS_EN = [
+  "PROFESSIONAL SUMMARY", "CORE COMPETENCIES", "PROFESSIONAL EXPERIENCE",
+  "EDUCATION", "LANGUAGES", "CERTIFICATIONS", "SKILLS",
+  "COURSES", "ADDITIONAL INFORMATION", "PUBLICATIONS", "VOLUNTEER",
+  "PROJECTS", "AWARDS", "REFERENCES",
+];
 
-    return pdfBuffer;
-  } finally {
-    await browser.close();
+function isSection(line: string, lang: "pt" | "en"): boolean {
+  const t = line.trim().toUpperCase();
+  const headers = lang === "pt" ? SECTION_HEADERS_PT : SECTION_HEADERS_EN;
+  return headers.some(h => t === h || t.startsWith(h + " ") || t.startsWith(h + ":"));
+}
+
+function isSubSection(line: string, lang: "pt" | "en"): boolean {
+  const t = line.trim();
+  return (
+    t === t.toUpperCase() &&
+    t.length > 2 &&
+    t.length < 60 &&
+    !t.startsWith("-") &&
+    !t.startsWith("•") &&
+    !t.match(/^\d/) &&
+    !isSection(t, lang)
+  );
+}
+
+function isBullet(line: string): boolean {
+  return /^[-•*▪·]\s/.test(line.trim());
+}
+
+function isContactLine(line: string): boolean {
+  return line.includes("|") || line.includes("@") || line.includes("+55") || line.includes("linkedin");
+}
+
+// ─── HTML builder ─────────────────────────────────────────────────────────────
+
+function buildResumeHTML(resumeText: string, lang: "pt" | "en"): string {
+  const lines = resumeText.split("\n");
+  let body = "";
+  let inSection = false;
+  let bulletGroup = false;
+  let nameProcessed = false;
+  let titleProcessed = false;
+  let contactProcessed = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    if (!line) {
+      if (bulletGroup) { body += `</ul>`; bulletGroup = false; }
+      continue;
+    }
+
+    if (!nameProcessed && i === 0) {
+      body += `<div class="name">${line}</div>`;
+      nameProcessed = true;
+      continue;
+    }
+
+    if (!titleProcessed && i === 1 && !isSection(line, lang)) {
+      body += `<div class="title">${line}</div>`;
+      titleProcessed = true;
+      continue;
+    }
+
+    if (!contactProcessed && (i === 2 || isContactLine(line)) && !isSection(line, lang)) {
+      body += `<div class="contact">${line}</div>`;
+      if (i === 2) contactProcessed = true;
+      continue;
+    }
+
+    if (isSection(line, lang)) {
+      if (bulletGroup) { body += `</ul>`; bulletGroup = false; }
+      if (inSection) body += `</div>`;
+      body += `<div class="section">`;
+      body += `<div class="sec-hdr"><span>${line}</span><div class="rule"></div></div>`;
+      body += `<div class="sec-body">`;
+      inSection = true;
+      continue;
+    }
+
+    if (isSubSection(line, lang)) {
+      if (bulletGroup) { body += `</ul>`; bulletGroup = false; }
+      body += `<div class="sub-hdr">${line}</div>`;
+      continue;
+    }
+
+    if (isBullet(line)) {
+      const text = line.replace(/^[-•*▪·]\s+/, "");
+      if (!bulletGroup) { body += `<ul class="bullets">`; bulletGroup = true; }
+      body += `<li>${text}</li>`;
+      continue;
+    }
+
+    if (bulletGroup) { body += `</ul>`; bulletGroup = false; }
+
+    if (line.includes(" | ") || line.includes(" – ") || line.match(/\w+\s*[-–]\s*\w+/)) {
+      body += `<div class="job-line">${line}</div>`;
+    } else {
+      body += `<p class="body-p">${line}</p>`;
+    }
   }
-}
 
-function esc(str = '') {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+  if (bulletGroup) body += `</ul>`;
+  if (inSection) body += `</div></div>`;
 
-function buildContactLine(resume) {
-  const parts = [];
-  if (resume.email)    parts.push(`<a href="mailto:${esc(resume.email)}">${esc(resume.email)}</a>`);
-  if (resume.phone)    parts.push(esc(resume.phone));
-  if (resume.location) parts.push(esc(resume.location));
-  if (resume.linkedin) parts.push(`<a href="${esc(resume.linkedin)}">LinkedIn</a>`);
-  if (resume.github)   parts.push(`<a href="${esc(resume.github)}">GitHub</a>`);
-  return parts.join(' &nbsp;|&nbsp; ');
-}
+  // Split header from sections
+  const sectionSplit = body.split(`<div class="section">`);
+  const headerHtml = sectionSplit[0];
+  const sectionsHtml = sectionSplit.length > 1
+    ? sectionSplit.slice(1).map(s => `<div class="section">${s}`).join("")
+    : "";
 
-function sectionHeader(title) {
-  return `
-    <div class="section-header">
-      <span class="section-title">${esc(title)}</span>
-      <div class="section-rule"></div>
-    </div>`;
-}
-
-function buildExperience(experience = []) {
-  if (!experience.length) return '';
-  const items = experience.map(job => `
-    <div class="entry">
-      <div class="entry-header">
-        <span class="entry-title">${esc(job.title)}</span>
-        <span class="entry-date">${esc(job.startDate)} – ${esc(job.endDate || 'Present')}</span>
-      </div>
-      <div class="entry-sub">
-        <span class="entry-org">${esc(job.company)}</span>
-        ${job.location ? `<span class="entry-location">${esc(job.location)}</span>` : ''}
-      </div>
-      ${job.bullets && job.bullets.length ? `
-        <ul class="bullets">
-          ${job.bullets.map(b => `<li>${esc(b)}</li>`).join('')}
-        </ul>` : ''}
-    </div>`).join('');
-  return sectionHeader('Experience') + items;
-}
-
-function buildEducation(education = []) {
-  if (!education.length) return '';
-  const items = education.map(edu => `
-    <div class="entry">
-      <div class="entry-header">
-        <span class="entry-title">${esc(edu.degree)}</span>
-        <span class="entry-date">${esc(edu.graduation)}</span>
-      </div>
-      <div class="entry-sub">
-        <span class="entry-org">${esc(edu.institution)}</span>
-        ${edu.location ? `<span class="entry-location">${esc(edu.location)}</span>` : ''}
-      </div>
-    </div>`).join('');
-  return sectionHeader('Education') + items;
-}
-
-function buildSkills(skills = []) {
-  if (!skills.length) return '';
-  const rows = skills.map(s => `
-    <div class="skill-row">
-      <span class="skill-cat">${esc(s.category)}:</span>
-      <span class="skill-items">${esc(s.items.join(', '))}</span>
-    </div>`).join('');
-  return sectionHeader('Skills') + rows;
-}
-
-function buildProjects(projects = []) {
-  if (!projects.length) return '';
-  const items = projects.map(p => `
-    <div class="entry">
-      <div class="entry-header">
-        <span class="entry-title">${esc(p.name)}</span>
-        ${p.technologies ? `<span class="entry-date">${esc(p.technologies)}</span>` : ''}
-      </div>
-      ${p.description ? `<div class="entry-desc">${esc(p.description)}</div>` : ''}
-      ${p.bullets && p.bullets.length ? `
-        <ul class="bullets">
-          ${p.bullets.map(b => `<li>${esc(b)}</li>`).join('')}
-        </ul>` : ''}
-    </div>`).join('');
-  return sectionHeader('Projects') + items;
-}
-
-function buildResumeHTML(resume) {
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${esc(resume.name)} — Resume</title>
 <style>
-  /* ─── Reset ─── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  /* ─── Base ─── */
-  html, body {
-    font-family: 'Arial', 'Helvetica Neue', Helvetica, sans-serif;
+  body {
+    font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;
     font-size: 10.5pt;
-    line-height: 1.45;
-    color: #1a1a1a;
-    background: #ffffff;
-    -webkit-print-color-adjust: exact;
+    line-height: 1.5;
+    color: #111;
+    background: #fff;
+    width: 794px;           /* A4 at 96dpi */
+    padding: 52px 62px;
   }
 
-  a { color: inherit; text-decoration: none; }
+  /* ── Header block ── */
+  .resume-header { border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
+  .name  { font-size: 21pt; font-weight: 700; color: #111; letter-spacing: -0.2px; line-height: 1.15; margin-bottom: 3px; }
+  .title { font-size: 11pt; font-weight: 500; color: #333; margin-bottom: 5px; }
+  .contact { font-size: 9pt; color: #555; }
 
-  /* ─── Page wrapper ─── */
-  .page {
-    width: 100%;
-    max-width: 100%;
-    padding: 0;          /* margins controlled by Puppeteer */
-  }
-
-  /* ─── Header ─── */
-  .resume-header {
-    text-align: center;
-    margin-bottom: 10pt;
-  }
-  .resume-name {
-    font-size: 20pt;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    color: #0d0d0d;
-    margin-bottom: 3pt;
-  }
-  .resume-contact {
-    font-size: 9pt;
-    color: #444;
-    line-height: 1.6;
-  }
-
-  /* ─── Section headers ─── */
-  .section-header {
+  /* ── Sections ── */
+  .section { margin-bottom: 13px; }
+  .sec-hdr {
     display: flex;
     align-items: center;
-    gap: 6pt;
-    margin: 11pt 0 5pt;
+    gap: 7px;
+    margin-bottom: 7px;
   }
-  .section-title {
-    font-size: 11pt;
+  .sec-hdr span {
+    font-size: 9pt;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 1.1px;
+    color: #111;
     white-space: nowrap;
-    color: #0d0d0d;
   }
-  .section-rule {
-    flex: 1;
-    height: 1.2pt;
-    background: #0d0d0d;
-  }
+  .rule { flex: 1; height: 1px; background: #111; }
+  .sec-body { padding: 0; }
 
-  /* ─── Entries ─── */
-  .entry { margin-bottom: 7pt; }
-  .entry-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-  }
-  .entry-title  { font-weight: 700; font-size: 10.5pt; }
-  .entry-date   { font-size: 9.5pt; color: #444; white-space: nowrap; margin-left: 8pt; }
-  .entry-sub    { display: flex; gap: 10pt; font-size: 9.5pt; color: #444; margin-top: 1pt; }
-  .entry-org    { font-style: italic; }
-  .entry-location::before { content: '·  '; }
-  .entry-desc   { font-size: 9.5pt; margin-top: 2pt; color: #333; }
+  /* ── Sub-headers (company / role lines) ── */
+  .sub-hdr { font-size: 10.5pt; font-weight: 600; color: #111; margin: 7px 0 2px; }
+  .job-line { font-size: 10pt; font-weight: 600; color: #222; margin: 5px 0 3px; }
 
-  /* ─── Bullets ─── */
-  .bullets {
-    margin: 3pt 0 0 13pt;
-    padding: 0;
-    list-style: disc;
-  }
+  /* ── Bullets ── */
+  .bullets { list-style: none; margin: 2px 0 5px 0; padding: 0; }
   .bullets li {
     font-size: 10pt;
-    margin-bottom: 2pt;
-    color: #1a1a1a;
-  }
-
-  /* ─── Summary ─── */
-  .summary-text {
-    font-size: 10pt;
     color: #333;
-    line-height: 1.5;
+    padding-left: 13px;
+    position: relative;
+    margin-bottom: 2px;
+    line-height: 1.45;
   }
+  .bullets li::before { content: "•"; position: absolute; left: 0; color: #111; font-weight: 700; }
 
-  /* ─── Skills ─── */
-  .skill-row { display: flex; gap: 4pt; margin-bottom: 3pt; font-size: 10pt; }
-  .skill-cat  { font-weight: 700; white-space: nowrap; }
-  .skill-items { color: #333; }
-
-  /* ─── Print safety ─── */
-  @media print {
-    body { margin: 0; }
-    .entry { page-break-inside: avoid; }
-    .section-header { page-break-after: avoid; }
-  }
+  /* ── Body text ── */
+  .body-p { font-size: 10pt; color: #333; margin-bottom: 3px; text-align: justify; }
 </style>
 </head>
 <body>
-<div class="page">
-
-  <!-- Header -->
-  <div class="resume-header">
-    <div class="resume-name">${esc(resume.name)}</div>
-    <div class="resume-contact">${buildContactLine(resume)}</div>
-  </div>
-
-  <!-- Summary -->
-  ${resume.summary ? `
-  ${sectionHeader('Summary')}
-  <div class="summary-text">${esc(resume.summary)}</div>` : ''}
-
-  <!-- Experience -->
-  ${buildExperience(resume.experience)}
-
-  <!-- Education -->
-  ${buildEducation(resume.education)}
-
-  <!-- Skills -->
-  ${buildSkills(resume.skills)}
-
-  <!-- Projects -->
-  ${buildProjects(resume.projects)}
-
-</div>
+<div class="resume-header">${headerHtml}</div>
+${sectionsHtml}
 </body>
 </html>`;
 }
 
-module.exports = { generateResumePDF };
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+export async function generateResumePDF(resumeText: string, lang: "pt" | "en" = "pt"): Promise<void> {
+  // 1. Build HTML
+  const html = buildResumeHTML(resumeText, lang);
+
+  // 2. Mount hidden iframe
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:794px;height:1123px;border:none;";
+  document.body.appendChild(iframe);
+
+  const iframeDoc = iframe.contentDocument!;
+  iframeDoc.open();
+  iframeDoc.write(html);
+  iframeDoc.close();
+
+  // 3. Wait for fonts / layout
+  await new Promise(r => setTimeout(r, 600));
+
+  try {
+    // 4. Render to canvas
+    const canvas = await html2canvas(iframeDoc.body, {
+      scale: 2,               // retina quality
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      windowWidth: 794,
+      logging: false,
+    });
+
+    // 5. Slice into A4 pages
+    const PDF_W = 210;        // mm
+    const PDF_H = 297;        // mm
+    const imgW = PDF_W;
+    const pxPerMm = canvas.width / PDF_W;
+    const pageHeightPx = PDF_H * pxPerMm;
+    const totalPages = Math.ceil(canvas.height / pageHeightPx);
+
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+    for (let p = 0; p < totalPages; p++) {
+      if (p > 0) pdf.addPage();
+
+      const srcY = p * pageHeightPx;
+      const sliceH = Math.min(pageHeightPx, canvas.height - srcY);
+
+      // Slice canvas
+      const pageCanvas = document.createElement("canvas");
+      pageCanvas.width = canvas.width;
+      pageCanvas.height = sliceH;
+      const ctx = pageCanvas.getContext("2d")!;
+      ctx.drawImage(canvas, 0, srcY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+
+      const imgData = pageCanvas.toDataURL("image/png");
+      const imgH = (sliceH / pxPerMm);
+
+      pdf.addImage(imgData, "PNG", 0, 0, imgW, imgH, undefined, "FAST");
+    }
+
+    // 6. Save — no watermark, no metadata branding
+    const filename = lang === "en" ? "Resume_Optimized.pdf" : "Curriculo_Otimizado.pdf";
+    pdf.save(filename);
+
+  } finally {
+    document.body.removeChild(iframe);
+  }
+}
