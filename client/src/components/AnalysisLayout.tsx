@@ -13,7 +13,7 @@ import {
   AlertTriangle, Copy, Download, Languages, Edit3, Save, X,
   LayoutPanelLeft, TrendingUp, DollarSign, Lightbulb, Link2,
   ChevronDown, ChevronUp, ExternalLink, Building2, MapPin,
-  Search, Briefcase, BookOpen, Star, BarChart2, Eye,
+  Search, Briefcase, BookOpen, Star, BarChart2, Eye, User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { extractTextFromFile } from "@/lib/fileExtractor";
 import { generateResumePDF } from "@/lib/pdfGenerator";
+import { generateClientReport } from "@/lib/clientReportGenerator";
 
 // ─── Types (mirrors resumeRouter output) ─────────────────────────────────────
 
@@ -165,6 +166,9 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
   const [fetchedJobText, setFetchedJobText] = useState("");
   const [isExtracting, setIsExtracting] = useState(false);
   const [savedCV, setSavedCV] = useState<SavedCV | null>(null);
+
+  // ── NOVO: Nome do cliente ──────────────────────────────────────────────────
+  const [clientName, setClientName] = useState("");
 
   // Results
   const [results, setResults] = useState<AnalysisResult | null>(null);
@@ -709,7 +713,14 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
                   <Copy className="w-3 h-3" />Copiar
                 </Button>
                 <Button size="sm" className="text-xs gap-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => { generateResumePDF(results.optimizedResume, "pt"); toast.success("PDF gerado!"); }}>
-                  <Download className="w-3 h-3" />PDF
+                  <Download className="w-3 h-3" />PDF CV
+                </Button>
+                {/* ── NOVO: Botão Relatório Cliente ── */}
+                <Button size="sm" className="text-xs gap-1 bg-blue-700 hover:bg-blue-800 text-white" onClick={() => {
+                  generateClientReport(results, clientName || "Cliente");
+                  toast.success("Relatório gerado!");
+                }}>
+                  <Download className="w-3 h-3" />Relatório
                 </Button>
                 <Button size="sm" variant="outline" className="text-xs gap-1" onClick={() => translateMutation.mutate({ resumeText: results.optimizedResume, jobContext: jobText })}>
                   {translateMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3" />}EN
@@ -784,8 +795,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
     { id: "cv", label: "CV", icon: FileText },
   ];
 
-  const progress = isAnalyzing ? undefined : results ? 100 : 0;
-
   // ─────────────────────────────────────────────────────────────────────────────
 
   return (
@@ -797,6 +806,24 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           <div>
             <h2 className={`text-lg font-bold ${dk ? "text-white" : "text-slate-900"}`}>Analisar Currículo</h2>
             <p className={`text-xs mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>Upload + vaga → análise ATS completa</p>
+          </div>
+
+          {/* ── NOVO: Nome do cliente ── */}
+          <div>
+            <label className={`text-xs font-semibold uppercase tracking-wide mb-1.5 flex items-center gap-1.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>
+              <User className="w-3 h-3" />Nome do cliente
+            </label>
+            <input
+              type="text"
+              placeholder="Ex: Maria Silva"
+              value={clientName}
+              onChange={e => setClientName(e.target.value)}
+              className={`w-full text-xs px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
+                dk
+                  ? "bg-slate-800 border-slate-600 text-white placeholder:text-slate-500"
+                  : "bg-white border-slate-300 text-slate-900 placeholder:text-slate-400"
+              }`}
+            />
           </div>
 
           {/* Saved CV banner */}
