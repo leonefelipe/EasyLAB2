@@ -1,45 +1,42 @@
 /**
  * pdfRouter.ts
- * tRPC router — server-side PDF generation via Puppeteer.
- * Zero watermarks. ATS-friendly. Professional layout.
+ * tRPC router — geração de PDF server-side via Puppeteer.
+ * Zero watermarks. Layout profissional. Texto normal sem bold indevido.
  */
 
 import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
 import puppeteer from "puppeteer";
 
-// ─── Section detection ────────────────────────────────────────────────────────
-
-const SECTION_HEADERS_PT = [
+const SECTIONS_PT = [
   "RESUMO PROFISSIONAL", "COMPETÊNCIAS PRINCIPAIS", "COMPETENCIAS PRINCIPAIS",
   "EXPERIÊNCIA PROFISSIONAL", "EXPERIENCIA PROFISSIONAL",
   "FORMAÇÃO ACADÊMICA", "FORMACAO ACADEMICA",
   "IDIOMAS", "CERTIFICAÇÕES", "CERTIFICACOES", "HABILIDADES",
   "CURSOS", "INFORMAÇÕES ADICIONAIS", "INFORMACOES ADICIONAIS",
-  "PUBLICAÇÕES", "PUBLICACOES", "VOLUNTARIADO",
+  "PUBLICAÇÕES", "PUBLICACOES", "VOLUNTARIADO", "PROJETOS",
 ];
-const SECTION_HEADERS_EN = [
+
+const SECTIONS_EN = [
   "PROFESSIONAL SUMMARY", "CORE COMPETENCIES", "PROFESSIONAL EXPERIENCE",
   "EDUCATION", "LANGUAGES", "CERTIFICATIONS", "SKILLS",
-  "COURSES", "ADDITIONAL INFORMATION", "PUBLICATIONS", "VOLUNTEER",
-  "PROJECTS", "AWARDS", "REFERENCES",
+  "COURSES", "ADDITIONAL INFORMATION", "PUBLICATIONS",
+  "VOLUNTEER", "PROJECTS", "AWARDS", "REFERENCES",
 ];
 
 function isSection(line: string, lang: "pt" | "en"): boolean {
   const t = line.trim().toUpperCase();
-  const headers = lang === "pt" ? SECTION_HEADERS_PT : SECTION_HEADERS_EN;
+  const headers = lang === "pt" ? SECTIONS_PT : SECTIONS_EN;
   return headers.some(h => t === h || t.startsWith(h + " ") || t.startsWith(h + ":"));
 }
 
 function isSubSection(line: string, lang: "pt" | "en"): boolean {
   const t = line.trim();
   return (
+    t.length > 2 && t.length < 60 &&
     t === t.toUpperCase() &&
-    t.length > 2 &&
-    t.length < 60 &&
-    !t.startsWith("-") &&
-    !t.startsWith("•") &&
-    !t.match(/^\d/) &&
+    !t.startsWith("-") && !t.startsWith("•") &&
+    !/^\d/.test(t) &&
     !isSection(t, lang)
   );
 }
@@ -48,203 +45,226 @@ function isBullet(line: string): boolean {
   return /^[-•*▪·]\s/.test(line.trim());
 }
 
-function isContactLine(line: string): boolean {
+function isContact(line: string): boolean {
   return (
-    line.includes("|") ||
-    line.includes("@") ||
-    line.includes("+55") ||
-    line.includes("linkedin")
+    line.includes("|") || line.includes("@") ||
+    line.includes("+55") || line.toLowerCase().includes("linkedin")
   );
 }
 
-// ─── HTML builder ─────────────────────────────────────────────────────────────
+function esc(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 function buildResumeHtml(resumeText: string, lang: "pt" | "en"): string {
   const lines = resumeText.split("\n");
-  let body = "";
+  let headerHtml = "";
+  let sectionsHtml = "";
+  let currentSection = "";
+
+  let nameDone = false;
+  let titleDone = false;
+  let contactDone = false;
   let inSection = false;
-  let bulletGroup = false;
-  let nameProcessed = false;
-  let titleProcessed = false;
-  let contactProcessed = false;
+  let bulletOpen = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
     if (!line) {
-      if (bulletGroup) { body += `</ul>`; bulletGroup = false; }
+      if (bulletOpen) {
+        if (inSection) currentSection += `</ul>`;
+        bulletOpen = false;
+      }
       continue;
     }
 
-    if (!nameProcessed && i === 0) {
-      body += `<div class="name">${line}</div>`;
-      nameProcessed = true;
+    if (!nameDone) {
+      headerHtml += `<div class="r-name">${esc(line)}</div>`;
+      nameDone = true;
       continue;
     }
 
-    if (!titleProcessed && i === 1 && !isSection(line, lang)) {
-      body += `<div class="title">${line}</div>`;
-      titleProcessed = true;
+    if (!titleDone && !isSection(line, lang)) {
+      headerHtml += `<div class="r-title">${esc(line)}</div>`;
+      titleDone = true;
       continue;
     }
 
-    if (!contactProcessed && (i === 2 || isContactLine(line)) && !isSection(line, lang)) {
-      body += `<div class="contact">${line}</div>`;
-      if (i === 2) contactProcessed = true;
+    if (!contactDone && (i <= 3 || isContact(line)) && !isSection(line, lang)) {
+      headerHtml += `<div class="r-contact">${esc(line)}</div>`;
+      contactDone = true;
       continue;
     }
 
     if (isSection(line, lang)) {
-      if (bulletGroup) { body += `</ul>`; bulletGroup = false; }
-      if (inSection) body += `</div>`;
-      body += `<div class="section">`;
-      body += `<div class="sec-hdr"><span>${line}</span><div class="rule"></div></div>`;
-      body += `<div class="sec-body">`;
+      if (bulletOpen) { currentSection += `</ul>`; bulletOpen = false; }
+      if (inSection) { sectionsHtml += currentSection + `</div></div>`; }
+      currentSection = `<div class="sec"><div class="sec-hdr"><span>${esc(line)}</span></div><div class="sec-body">`;
       inSection = true;
       continue;
     }
 
     if (isSubSection(line, lang)) {
-      if (bulletGroup) { body += `</ul>`; bulletGroup = false; }
-      body += `<div class="sub-hdr">${line}</div>`;
+      if (bulletOpen) { currentSection += `</ul>`; bulletOpen = false; }
+      currentSection += `<div class="sub">${esc(line)}</div>`;
       continue;
     }
 
     if (isBullet(line)) {
-      const text = line.replace(/^[-•*▪·]\s+/, "");
-      if (!bulletGroup) { body += `<ul class="bullets">`; bulletGroup = true; }
-      body += `<li>${text}</li>`;
+      const txt = esc(line.replace(/^[-•*▪·]\s+/, ""));
+      if (!bulletOpen) { currentSection += `<ul>`; bulletOpen = true; }
+      currentSection += `<li>${txt}</li>`;
       continue;
     }
 
-    if (bulletGroup) { body += `</ul>`; bulletGroup = false; }
+    if (bulletOpen) { currentSection += `</ul>`; bulletOpen = false; }
 
-    if (line.includes(" | ") || line.includes(" – ") || line.match(/\w+\s*[-–]\s*\w+/)) {
-      body += `<div class="job-line">${line}</div>`;
+    if (line.includes(" | ") || line.includes(" – ") || line.includes(" - ")) {
+      currentSection += `<div class="job-line">${esc(line)}</div>`;
     } else {
-      body += `<p class="body-p">${line}</p>`;
+      currentSection += `<p>${esc(line)}</p>`;
     }
   }
 
-  if (bulletGroup) body += `</ul>`;
-  if (inSection) body += `</div></div>`;
-
-  const sectionSplit = body.split(`<div class="section">`);
-  const headerHtml = sectionSplit[0];
-  const sectionsHtml =
-    sectionSplit.length > 1
-      ? sectionSplit.slice(1).map(s => `<div class="section">${s}`).join("")
-      : "";
+  if (bulletOpen && currentSection) currentSection += `</ul>`;
+  if (inSection) sectionsHtml += currentSection + `</div></div>`;
 
   return `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
 <meta charset="UTF-8">
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  body {
-    font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;
-    font-size: 10.5pt;
-    line-height: 1.5;
-    color: #111111;
-    background: #ffffff;
-  }
+body {
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.5;
+  color: #111;
+  background: #fff;
+}
 
-  .page {
-    width: 210mm;
-    min-height: 297mm;
-    padding: 16mm 20mm 16mm 20mm;
-    background: #ffffff;
-  }
+.page {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 16mm 20mm;
+  background: #fff;
+}
 
-  /* ── Header ── */
-  .resume-header {
-    border-bottom: 1.8px solid #111;
-    padding-bottom: 10px;
-    margin-bottom: 13px;
-  }
-  .name {
-    font-size: 21pt;
-    font-weight: 700;
-    color: #111;
-    letter-spacing: -0.2px;
-    line-height: 1.15;
-    margin-bottom: 3px;
-  }
-  .title {
-    font-size: 11pt;
-    font-weight: 500;
-    color: #333;
-    margin-bottom: 5px;
-  }
-  .contact {
-    font-size: 9pt;
-    color: #555;
-  }
+.r-hdr {
+  border-bottom: 1.5px solid #111;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+}
+.r-name {
+  font-size: 22pt;
+  font-weight: 700;
+  color: #111;
+  line-height: 1.15;
+  margin-bottom: 3px;
+  letter-spacing: -0.3px;
+}
+.r-title {
+  font-size: 11pt;
+  font-weight: 400;
+  color: #333;
+  margin-bottom: 5px;
+}
+.r-contact {
+  font-size: 9pt;
+  color: #555;
+  font-weight: 400;
+}
 
-  /* ── Sections ── */
-  .section { margin-bottom: 12px; page-break-inside: avoid; }
-  .sec-hdr {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    margin-bottom: 7px;
-    page-break-after: avoid;
-  }
-  .sec-hdr span {
-    font-size: 9pt;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1.1px;
-    color: #111;
-    white-space: nowrap;
-  }
-  .rule { flex: 1; height: 1px; background: #111; }
-  .sec-body { padding: 0; }
+.sec { margin-bottom: 13px; page-break-inside: avoid; }
 
-  /* ── Sub-headers ── */
-  .sub-hdr { font-size: 10.5pt; font-weight: 600; color: #111; margin: 7px 0 2px; }
-  .job-line { font-size: 10pt; font-weight: 600; color: #222; margin: 5px 0 3px; }
+.sec-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  page-break-after: avoid;
+}
+.sec-hdr span {
+  font-size: 9pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.3px;
+  color: #111;
+  white-space: nowrap;
+}
+.sec-hdr::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #111;
+  display: block;
+}
 
-  /* ── Bullets ── */
-  .bullets { list-style: none; margin: 2px 0 5px 0; padding: 0; }
-  .bullets li {
-    font-size: 10pt;
-    color: #333;
-    padding-left: 13px;
-    position: relative;
-    margin-bottom: 2px;
-    line-height: 1.45;
-  }
-  .bullets li::before {
-    content: "•";
-    position: absolute;
-    left: 0;
-    color: #111;
-    font-weight: 700;
-  }
+.sec-body { padding: 0; }
 
-  /* ── Body ── */
-  .body-p { font-size: 10pt; color: #333; margin-bottom: 3px; text-align: justify; }
+.sub {
+  font-size: 10.5pt;
+  font-weight: 700;
+  color: #111;
+  margin: 7px 0 2px;
+}
+.job-line {
+  font-size: 10pt;
+  font-weight: 600;
+  color: #222;
+  margin: 5px 0 3px;
+}
 
-  @media print {
-    body { margin: 0; }
-    .page { padding: 14mm 18mm; }
-    .section { page-break-inside: avoid; }
-  }
+ul {
+  list-style: none;
+  margin: 3px 0 6px 0;
+  padding: 0;
+}
+li {
+  font-size: 10pt;
+  color: #333;
+  padding-left: 14px;
+  position: relative;
+  margin-bottom: 2px;
+  line-height: 1.45;
+  font-weight: 400;
+}
+li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: #111;
+  font-weight: 700;
+}
+
+p {
+  font-size: 10pt;
+  color: #333;
+  margin-bottom: 3px;
+  text-align: justify;
+  font-weight: 400;
+}
+
+@media print {
+  body { margin: 0; }
+  .page { padding: 14mm 18mm; }
+}
 </style>
 </head>
 <body>
 <div class="page">
-  <div class="resume-header">${headerHtml}</div>
+  <div class="r-hdr">${headerHtml}</div>
   ${sectionsHtml}
 </div>
 </body>
 </html>`;
 }
-
-// ─── tRPC router ──────────────────────────────────────────────────────────────
 
 export const pdfRouter = router({
   generate: publicProcedure
@@ -278,8 +298,8 @@ export const pdfRouter = router({
 
         const pdfBuffer = await page.pdf({
           format: "A4",
-          printBackground: false,       // ← sem fundos coloridos / overlays
-          displayHeaderFooter: false,   // ← sem header/footer do browser (elimina watermarks)
+          printBackground: false,
+          displayHeaderFooter: false,
           margin: { top: "0mm", bottom: "0mm", left: "0mm", right: "0mm" },
         });
 
