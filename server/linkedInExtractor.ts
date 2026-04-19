@@ -1,7 +1,7 @@
 /**
  * linkedInExtractor.ts
- * Puppeteer-based LinkedIn job extractor with plain-fetch fallback.
- * Place at: server/linkedInExtractor.ts
+ * Pipeline de extração LinkedIn — Puppeteer (produção) → fetch (fallback).
+ * Compatible com: server/jobExtractorRouter.ts → extractLinkedInJob(url)
  */
 
 import { ENV } from "./_core/env";
@@ -18,7 +18,7 @@ export interface LinkedInJobData {
   method: "puppeteer" | "fetch" | "failed";
 }
 
-// ─── HTML → plain text ────────────────────────────────────────────────────────
+// ─── HTML → texto limpo ───────────────────────────────────────────────────────
 
 function cleanHtml(html: string): string {
   return html
@@ -40,39 +40,31 @@ function cleanHtml(html: string): string {
     .trim();
 }
 
-function extractField(html: string, patterns: RegExp[]): string {
-  for (const p of patterns) {
-    const m = html.match(p);
-    if (m?.[1]) return cleanHtml(m[1]).slice(0, 400).trim();
-  }
-  return "";
-}
+// ─── Detecção de skills ───────────────────────────────────────────────────────
 
 function parseSkills(text: string): string[] {
-  const KNOWN: string[] = [
-    "python","javascript","typescript","java","c#","c++","go","rust","php","ruby","swift","kotlin",
-    "react","vue","angular","node.js","django","flask","spring","laravel",
-    "aws","azure","gcp","docker","kubernetes","terraform","git","ci/cd",
-    "sql","postgresql","mysql","mongodb","elasticsearch","kafka","spark",
-    "power bi","tableau","looker","dbt","airflow",
-    "salesforce","hubspot","pipedrive","rdstation","zoho",
-    "google ads","meta ads","seo","google analytics",
-    "linkedin recruiter","gupy","workday","greenhouse","taleo",
-    "agile","scrum","kanban","devops",
-    "excel","power point","word","jira","confluence","notion","slack",
-    "liderança","gestão","negociação","comunicação","planejamento","análise",
+  const KNOWN = [
+    "python", "javascript", "typescript", "java", "c#", "c++", "go", "rust", "php", "ruby", "swift", "kotlin",
+    "react", "vue", "angular", "node.js", "django", "flask", "spring", "laravel", "next.js",
+    "aws", "azure", "gcp", "docker", "kubernetes", "terraform", "git", "ci/cd", "github actions",
+    "sql", "postgresql", "mysql", "mongodb", "elasticsearch", "kafka", "spark", "redis",
+    "power bi", "tableau", "looker", "dbt", "airflow", "databricks",
+    "salesforce", "hubspot", "pipedrive", "rdstation", "zoho",
+    "google ads", "meta ads", "seo", "google analytics", "google tag manager",
+    "linkedin recruiter", "gupy", "workday", "greenhouse", "taleo",
+    "agile", "scrum", "kanban", "devops", "mlops",
+    "excel", "powerpoint", "word", "jira", "confluence", "notion", "slack",
+    "liderança", "gestão", "negociação", "comunicação", "planejamento", "análise",
   ];
   const low = text.toLowerCase();
   return KNOWN.filter(s => low.includes(s));
 }
 
-// ─── Puppeteer extraction ─────────────────────────────────────────────────────
+// ─── LAYER 1: Puppeteer (headless Chromium) ───────────────────────────────────
 
 async function extractWithPuppeteer(url: string): Promise<LinkedInJobData | null> {
   let browser: import("puppeteer").Browser | null = null;
-
   try {
-    // Dynamic import — avoids crashing if puppeteer isn't installed
     const puppeteer = await import("puppeteer").then(m => m.default ?? m);
 
     browser = await puppeteer.launch({
@@ -83,78 +75,104 @@ async function extractWithPuppeteer(url: string): Promise<LinkedInJobData | null
         "--disable-dev-shm-usage",
         "--disable-gpu",
         "--single-process",
+        "--disable-blink-features=AutomationControlled",
       ],
     });
 
     const page = await browser.newPage();
 
-    // Realistic viewport + UA
+    // UA realista
     await page.setViewport({ width: 1280, height: 800 });
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     );
 
-    // Block images/fonts to speed up
+    // Esconder webdriver flag
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+    });
+
+    // Bloquear imagens/fontes para acelerar
     await page.setRequestInterception(true);
     page.on("request", req => {
-      if (["image", "font", "media"].includes(req.resourceType())) req.abort();
+      if (["image", "font", "media", "stylesheet"].includes(req.resourceType())) req.abort();
       else req.continue();
     });
 
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 25000 });
 
-    // Wait for job description container
+    // Fechar modal de login se aparecer
+    await page.evaluate(() => {
+      const modal = document.querySelector<HTMLElement>(".modal__overlay, .authwall-modal");
+      if (modal) modal.remove();
+    });
+
+    // Expandir "Ver mais"
+    await page.evaluate(() => {
+      const btn = document.querySelector<HTMLElement>(
+        "button.show-more-less-html__button--more, .jobs-description__footer-button"
+      );
+      if (btn) btn.click();
+    });
+
+    // Aguardar description
     await page.waitForSelector(
       ".show-more-less-html__markup, .description__text, #job-details, .jobs-description",
       { timeout: 8000 }
     ).catch(() => null);
 
-    // Extract via DOM
+    await page.waitForTimeout(800);
+
+    // Extrair via DOM
     const data = await page.evaluate(() => {
-      const getText = (sel: string) =>
+      const t = (sel: string) =>
         (document.querySelector(sel) as HTMLElement | null)?.innerText?.trim() ?? "";
 
       const title =
-        getText(".top-card-layout__title") ||
-        getText("h1.job-details-jobs-unified-top-card__job-title") ||
-        getText("h1") ||
+        t(".top-card-layout__title") ||
+        t("h1.job-details-jobs-unified-top-card__job-title") ||
+        t(".jobs-unified-top-card__job-title h1") ||
+        t("h1") ||
         document.title.split("|")[0].trim();
 
       const company =
-        getText(".topcard__org-name-link") ||
-        getText(".top-card-layout__first-subline a") ||
-        getText(".jobs-unified-top-card__company-name") ||
+        t(".topcard__org-name-link") ||
+        t(".top-card-layout__first-subline a") ||
+        t(".jobs-unified-top-card__company-name") ||
+        t(".job-details-jobs-unified-top-card__company-name a") ||
         "";
 
       const location =
-        getText(".topcard__flavor--bullet") ||
-        getText(".jobs-unified-top-card__bullet") ||
-        getText(".top-card-layout__first-subline .topcard__flavor:not(.topcard__flavor--bullet)") ||
+        t(".topcard__flavor--bullet") ||
+        t(".jobs-unified-top-card__bullet") ||
+        t(".job-details-jobs-unified-top-card__bullet") ||
         "";
 
       const description =
-        getText(".show-more-less-html__markup") ||
-        getText(".description__text") ||
-        getText("#job-details") ||
-        getText(".jobs-description-content__text") ||
+        t(".show-more-less-html__markup") ||
+        t(".description__text") ||
+        t("#job-details") ||
+        t(".jobs-description-content__text") ||
+        t(".jobs-description") ||
         "";
 
       const seniority =
-        getText(".description__job-criteria-text:nth-of-type(1)") ||
-        getText("li.job-criteria__item:nth-child(1) span") ||
+        t("li.job-criteria__item:nth-child(1) span.job-criteria__text") ||
+        t(".description__job-criteria-text:nth-of-type(1)") ||
         "";
 
       const employmentType =
-        getText(".description__job-criteria-text:nth-of-type(2)") ||
-        getText("li.job-criteria__item:nth-child(2) span") ||
+        t("li.job-criteria__item:nth-child(2) span.job-criteria__text") ||
+        t(".description__job-criteria-text:nth-of-type(2)") ||
         "";
 
-      // Fallback: grab all visible text if description is empty
-      const bodyText = description.length < 50
-        ? (document.querySelector("main")?.innerText ?? document.body.innerText).slice(0, 8000)
-        : description;
+      // Fallback: texto do body inteiro se description vazio
+      const body =
+        description.length < 80
+          ? (document.querySelector("main")?.innerText ?? document.body.innerText).slice(0, 9000)
+          : description;
 
-      return { title, company, location, description: bodyText, seniority, employmentType };
+      return { title, company, location, description: body, seniority, employmentType };
     });
 
     const skills = parseSkills(data.description);
@@ -163,21 +181,22 @@ async function extractWithPuppeteer(url: string): Promise<LinkedInJobData | null
       title: data.title,
       company: data.company,
       location: data.location,
-      description: data.description.slice(0, 7000),
+      description: data.description.slice(0, 8000),
       skills,
       seniorityLevel: data.seniority,
       employmentType: data.employmentType,
-      scrapedSuccessfully: data.description.length > 100,
+      scrapedSuccessfully: data.description.length > 120,
       method: "puppeteer",
     };
-  } catch {
+  } catch (err) {
+    console.error("[LinkedIn/Puppeteer]", (err as Error).message);
     return null;
   } finally {
     await browser?.close().catch(() => null);
   }
 }
 
-// ─── Plain-fetch fallback ─────────────────────────────────────────────────────
+// ─── LAYER 2: fetch simples (fallback) ───────────────────────────────────────
 
 async function extractWithFetch(url: string): Promise<LinkedInJobData | null> {
   try {
@@ -189,71 +208,104 @@ async function extractWithFetch(url: string): Promise<LinkedInJobData | null> {
         "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
         "Cache-Control": "no-cache",
         Referer: "https://www.google.com/",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
       },
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(12000),
     });
 
     if (!res.ok) return null;
     const html = await res.text();
 
-    // Bail on login wall
-    if (html.includes("authwall") || html.includes("uas/login") || html.length < 3000) {
-      return null;
+    // Rejeitar login wall
+    if (
+      html.includes("authwall") ||
+      html.includes("uas/login") ||
+      html.length < 3000
+    ) return null;
+
+    // JSON-LD structured data (mais confiável quando presente)
+    const jsonLdMatch = html.match(/<script type="application\/ld\+json">([\s\S]+?)<\/script>/i);
+    if (jsonLdMatch) {
+      try {
+        const ld = JSON.parse(jsonLdMatch[1]);
+        if (ld.description && ld.description.length > 100) {
+          const desc = cleanHtml(ld.description).slice(0, 8000);
+          return {
+            title: ld.title ?? "",
+            company: ld.hiringOrganization?.name ?? "",
+            location: ld.jobLocation?.address?.addressLocality ?? "",
+            description: desc,
+            skills: parseSkills(desc),
+            seniorityLevel: "",
+            employmentType: ld.employmentType ?? "",
+            scrapedSuccessfully: true,
+            method: "fetch",
+          };
+        }
+      } catch { /* ignore */ }
     }
 
-    const title = extractField(html, [
+    // Fallback: regex patterns
+    const extractField = (patterns: RegExp[]): string => {
+      for (const p of patterns) {
+        const m = html.match(p);
+        if (m?.[1]) return cleanHtml(m[1]).slice(0, 400).trim();
+      }
+      return "";
+    };
+
+    const title = extractField([
       /<h1[^>]*class="[^"]*top-card-layout__title[^"]*"[^>]*>([\s\S]+?)<\/h1>/i,
       /<title>([^|<]+)/i,
     ]);
-    const company = extractField(html, [
+    const company = extractField([
       /class="[^"]*topcard__org-name-link[^"]*"[^>]*>([\s\S]+?)<\/a>/i,
     ]);
-    const location = extractField(html, [
+    const location = extractField([
       /class="[^"]*topcard__flavor--bullet[^"]*"[^>]*>([\s\S]+?)<\/span>/i,
     ]);
 
-    // Description
-    const descPatterns = [
+    let description = "";
+    for (const p of [
       /<div[^>]*class="[^"]*show-more-less-html__markup[^"]*"[^>]*>([\s\S]+?)<\/div>/i,
       /<section[^>]*class="[^"]*description[^"]*"[^>]*>([\s\S]+?)<\/section>/i,
       /<div[^>]*id="job-details"[^>]*>([\s\S]+?)<\/div>/i,
-    ];
-    let description = "";
-    for (const p of descPatterns) {
+    ]) {
       const m = html.match(p);
-      if (m?.[1]) { description = cleanHtml(m[1]).slice(0, 7000); break; }
+      if (m?.[1]) { description = cleanHtml(m[1]).slice(0, 8000); break; }
     }
 
-    if (description.length < 80) return null; // still blocked
-
-    const skills = parseSkills(description);
+    if (description.length < 80) return null;
 
     return {
       title,
       company,
       location,
       description,
-      skills,
+      skills: parseSkills(description),
       seniorityLevel: "",
       employmentType: "",
       scrapedSuccessfully: true,
       method: "fetch",
     };
-  } catch {
+  } catch (err) {
+    console.error("[LinkedIn/Fetch]", (err as Error).message);
     return null;
   }
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// ─── API pública ───────────────────────────────────────────────────────────────
+
+const FAILED: LinkedInJobData = {
+  title: "", company: "", location: "", description: "",
+  skills: [], seniorityLevel: "", employmentType: "",
+  scrapedSuccessfully: false, method: "failed",
+};
 
 export async function extractLinkedInJob(url: string): Promise<LinkedInJobData> {
-  const FAILED: LinkedInJobData = {
-    title: "", company: "", location: "", description: "",
-    skills: [], seniorityLevel: "", employmentType: "",
-    scrapedSuccessfully: false, method: "failed",
-  };
-
-  // Validate
+  // Validar URL
   try {
     const u = new URL(url);
     if (!u.hostname.includes("linkedin.com")) return FAILED;
@@ -261,13 +313,13 @@ export async function extractLinkedInJob(url: string): Promise<LinkedInJobData> 
     return FAILED;
   }
 
-  // Only run Puppeteer in production (Render has Chromium available via puppeteer)
-  if (ENV.nodeEnv === "production") {
-    const puppeteerResult = await extractWithPuppeteer(url);
-    if (puppeteerResult?.scrapedSuccessfully) return puppeteerResult;
+  // Em produção tenta Puppeteer primeiro (Render tem Chromium via puppeteer)
+  if (ENV.nodeEnv === "production" || process.env.NODE_ENV === "production") {
+    const result = await extractWithPuppeteer(url);
+    if (result?.scrapedSuccessfully) return result;
   }
 
-  // Fetch fallback
+  // Fallback fetch
   const fetchResult = await extractWithFetch(url);
   if (fetchResult) return fetchResult;
 
