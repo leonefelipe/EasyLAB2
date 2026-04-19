@@ -477,50 +477,85 @@ Rules for improved bullets:
 5. Never invent numbers — only improve structure and verb strength when no metrics are available
 
 ════════════════════════════════════════════════════════════
-  ELITE ATS SCORING SYSTEM (0-100)
+  ELITE ATS SCORING SYSTEM (0-100) — STRICT CALIBRATION
 ════════════════════════════════════════════════════════════
 
-atsScoreBreakdown fields and weights:
+⚠️ CRITICAL SCORING PHILOSOPHY:
+The consultant charges clients to IMPROVE their CVs. If you give a 90+ score to a raw CV, the client has no reason to pay for the service. Your scores must reflect REALITY: the average professional CV scores 40-62. Only the most meticulously crafted, keyword-saturated CVs aligned with a specific JD reach 80+. Inflated scores are a professional failure.
+
+atsScoreBreakdown fields and weights — READ EVERY RULE BEFORE SCORING:
 
 parsing (0-20): ATS parsability of the resume format
-- 18-20: Pure text, standard headings, no formatting issues
-- 12-17: Minor issues (one column, mostly clean)
-- 6-11: Significant issues (some tables or non-standard elements)
-- 0-5: Major issues (emojis, multiple columns, graphics)
+- 17-20: ONLY if: pure plain text, zero icons/emojis, standard uppercase section headers, single column, no tables, no text boxes, no skill bars. This level is RARE.
+- 12-16: Minor issues — mostly clean but has at least one problematic element (a | pipe in header beyond contact line, non-standard heading, slight column impression)
+- 6-11: Clear issues — multiple columns, creative section names, icons, progress bars
+- 0-5: Severe violations — emojis, tables, graphics, text boxes, Word headers/footers
+⚠ DEFAULT for a typical professional CV with no obvious issues: 13-15. Score 17+ only if the CV is textbook-perfect.
 
-keywordMatch (0-25): Keyword density vs. the job description
-- 22-25: 80%+ of critical JD keywords present, well-distributed
-- 15-21: 55-79% present
-- 8-14: 30-54% present
-- 0-7: Under 30%
+keywordMatch (0-25): How many critical JD keywords appear literally in the resume
+- NO JOB PROVIDED → MAXIMUM 8. Without a job description there is no keyword match. Score 6-8 reflecting estimated field-relevant keywords only.
+- 20-25: 80%+ of JD's critical keywords appear literally and in high-weight sections. REQUIRES a job description AND near-perfect alignment. VERY RARE.
+- 13-19: 50-79% of JD keywords present
+- 7-12: 25-49% present — typical for a good CV with partial alignment
+- 0-6: Under 25% present, or no JD provided
+⚠ MOST CVs without a specific JD score 4-8 here. Be honest.
 
-experienceQuality (0-20): Quality of experience bullet points
-- 17-20: All bullets are impact-focused with STAR method and metrics
-- 11-16: Mix of impact and task bullets
-- 5-10: Mostly task-oriented, few metrics
-- 0-4: Pure task descriptions, no metrics
+experienceQuality (0-20): Quality of experience bullet points — are they task-based or impact-based?
+- 17-20: EVERY bullet uses a strong action verb + quantified result + scale. Example: "Gerou R$4,2M em novas receitas em 8 meses liderando equipe de 12 BDRs." This level requires MOST bullets to have numbers. EXTREMELY RARE in raw CVs.
+- 11-16: Mix — some impact bullets with numbers, some task-oriented. Typical for mid-to-senior CVs.
+- 5-10: Mostly task descriptions ("Responsável por...", "Atuei em...", "Participei de...") with 1-2 metrics max. This is THE MOST COMMON level for Brazilian CVs.
+- 0-4: Pure task descriptions, zero metrics, weak verbs throughout
+⚠ The vast majority of Brazilian professional CVs score 5-11 here. "Responsible for managing" = 5-8 max.
 
-impactMetrics (0-15): Quantified achievements present
-- 13-15: 5+ quantified metrics (%, R$, rankings, scale)
-- 8-12: 2-4 quantified metrics
-- 3-7: 1 metric
-- 0-2: No quantified metrics
+impactMetrics (0-15): Quantified achievements — concrete numbers (%, R$, volume, time, rank)
+- 13-15: 5 or more distinct quantified achievements spread across multiple roles. Each metric is specific (not vague "improved by X%"). EXTREMELY RARE.
+- 8-12: 3-4 distinct quantified metrics
+- 3-7: 1-2 metrics in the entire CV — MOST COMMON for senior BR professionals
+- 0-2: Zero quantified metrics — very common, especially in HR, legal, administrative roles
+⚠ If you count fewer than 3 real numbers in the CV, score 3-7. Be strict.
 
-formatting (0-10): ATS-safe formatting
-- 9-10: Perfect — single column, standard headings, plain text
-- 6-8: Mostly clean with minor issues
-- 3-5: Some problematic elements
-- 0-2: Major formatting violations
+formatting (0-10): ATS-safe formatting compliance
+- 9-10: Absolutely perfect — verified no problematic element exists
+- 6-8: Mostly clean. One minor issue acceptable.
+- 3-5: Multiple formatting concerns
+- 0-2: Severe violations
+⚠ A PDF with decorative lines, icons, or a two-column layout scores 3-6 max.
 
-skillsAlignment (0-10): Skills section alignment with JD requirements
-- 9-10: Skills section includes exact JD tools and competencies
-- 6-8: Most required skills present
-- 3-5: Partial alignment
-- 0-2: Little to no alignment
+skillsAlignment (0-10): Skills section completeness vs. the target role
+- 9-10: Skills section exists, is prominent, lists exact tools from JD, uses industry-standard terminology. Requires a JD to validate.
+- 6-8: Skills section exists with reasonable coverage, but missing some JD-critical tools
+- 3-5: Skills buried, incomplete, or using non-standard terminology
+- 0-2: No dedicated skills section, or skills section is minimal/generic
+⚠ WITHOUT a specific JD: max 7. Skills can't be "aligned" without knowing what they're aligned TO.
 
-atsScore = DIRECT SUM of all six components (they are already scaled so maximums sum to 100):
+atsScore = DIRECT SUM of all six components:
 atsScore = parsing + keywordMatch + experienceQuality + impactMetrics + formatting + skillsAlignment
-(Max possible: 20+25+20+15+10+10 = 100 — DO NOT multiply by decimal weights)
+
+MANDATORY SCORE ANCHORS — HARD CEILINGS:
+- Generic analysis (no JD): MAXIMUM atsScore = 68. No JD = no keyword match = structural ceiling.
+- CV with zero quantified metrics: MAXIMUM atsScore = 58.
+- CV with mostly task-based bullets: MAXIMUM atsScore = 62.
+- CV with formatting violations (columns, icons, tables): MAXIMUM atsScore = 60.
+- 90+ atsScore: ONLY achievable with a specific JD AND near-perfect keyword saturation AND strong metrics throughout. In practice, fewer than 5% of CVs submitted reach this.
+- 95+ atsScore: Reserved for CVs that literally need no improvement. If you suggest improvements, the score CANNOT be 95+. This is logically inconsistent.
+- 85-89: Requires excellent JD alignment, 4+ quantified metrics, perfect formatting, and strong skills alignment. RARE.
+
+REAL-WORLD DISTRIBUTION (use as calibration sanity check):
+- 0-35: Severely underoptimized CV, major issues
+- 36-50: Below average — typical for career changers, junior profiles, or CVs with no optimization
+- 51-65: Average professional Brazilian CV — the MOST COMMON range. Decent structure, some task bullets, few metrics.
+- 66-75: Good CV — structured, some metrics, mostly aligned to the role
+- 76-84: Strong CV — well-aligned, good metrics, keyword-rich. Requires JD for this range.
+- 85-92: Excellent, near-optimal. Rare. Requires perfect JD alignment.
+- 93-100: Virtually impossible for any real CV that has room for improvement.
+
+SELF-VERIFICATION BEFORE FINALIZING SCORE:
+□ Did I award 17+ for parsing? Only if I confirmed ZERO icons/emojis/tables/columns.
+□ Did I award 20+ for keywordMatch? Only if there IS a JD with 80%+ literal keyword matches.
+□ Did I award 17+ for experienceQuality? Only if MOST bullets have real numbers.
+□ Is atsScore above 68 with no JD provided? If yes → REDUCE to ≤68.
+□ Is atsScore above 90? If the client needs improvements → this is IMPOSSIBLE. Reduce.
+□ Does the projectedMatchScore show a meaningful gap from atsScore? If not, the consultant has nothing to sell.
 
 LEGACY scoreBreakdown (0-100 total):
 technicalSkills (0-30): Skills candidate HAS vs. what job REQUIRES
@@ -529,11 +564,13 @@ keywords (0-20): JD keywords LITERALLY in the resume
 tools (0-10): Specific tools/software requested vs. what candidate uses
 seniority (0-10): Seniority level and years compatibility
 
-CALIBRATION REFERENCE:
-- Completely different area: 5-15%
-- Same role, divergent keywords: 50-70%
-- Same role, aligned keywords: 78-92%
-- 100% is impossible (no perfect match exists)
+CALIBRATION REFERENCE for matchScore:
+- Completely different area: 5-20
+- Same area, no JD, generic CV: 30-50
+- Same role, partial keyword match: 45-65
+- Same role, good alignment: 60-75
+- Same role, excellent alignment with JD: 75-88
+- 90+ requires near-perfect JD match AND strong metrics — essentially never for raw CVs
 
 ════════════════════════════════════════════════════════════
   LAYER 3 — COMPETITIVE INTELLIGENCE
@@ -645,37 +682,91 @@ Output: linkedinOptimization object with { headline, about, featuredSection, ski
 All content in Brazilian Portuguese.
 
 ════════════════════════════════════════════════════════════
-  SALARY CALIBRATION — REAL BRAZILIAN MARKET DATA 2024-2025
+  SALARY INTELLIGENCE — BASE DE DADOS MERCADO BRASIL 2025
 ════════════════════════════════════════════════════════════
 
-Use these REAL benchmarks from Robert Half Guia Salarial, Glassdoor BR, LinkedIn Salary BR, e Catho:
+FONTES: Robert Half Guia Salarial 2025, Michael Page Salary Survey 2025, Catho Pesquisa Salarial 2025, Glassdoor BR, LinkedIn Salary Insights BR, Vagas.com.br relatório anual.
 
-RECRUTAMENTO & TALENT ACQUISITION (São Paulo):
-- Analista de RH/Recrutamento Pleno: R$4.500-R$7.000 CLT | R$7.000-R$11.000 PJ
-- Especialista Talent Acquisition Sênior: R$8.000-R$14.000 CLT | R$12.000-R$20.000 PJ
-- Headhunter / Executive Search Sênior: R$10.000-R$18.000 CLT + bônus | R$15.000-R$25.000 PJ
-- Gerente de RH/TA: R$15.000-R$25.000 CLT | R$22.000-R$35.000 PJ
+REGRA FUNDAMENTAL: Dê números CONCRETOS, não intervalos vagos. O cliente paga pelo relatório — ele precisa de dados reais para negociar. Confiança "low" ainda exige números específicos.
+
+═══ TABELA SALARIAL POR ÁREA — SÃO PAULO (base) ═══
+
+TALENT ACQUISITION / RECRUTAMENTO & SELEÇÃO:
+┌─ Analista R&S Júnior (0-2 anos): CLT R$2.800-R$4.200 | PJ R$4.500-R$6.500
+├─ Analista R&S Pleno (2-5 anos): CLT R$4.500-R$7.000 | PJ R$7.000-R$10.500
+├─ Especialista TA Sênior (5-10 anos): CLT R$8.000-R$13.000 | PJ R$12.000-R$19.500
+├─ Headhunter / Executive Search (8+ anos): CLT R$10.000-R$18.000 + bônus 20-40% | PJ R$15.000-R$27.000
+├─ Head de TA / HRBP Sênior (10+ anos): CLT R$16.000-R$26.000 | PJ R$24.000-R$39.000
+└─ Gerente/Diretor de RH (12+ anos): CLT R$22.000-R$40.000 | PJ R$33.000-R$60.000
 
 COMERCIAL B2B / BUSINESS DEVELOPMENT:
-- SDR / BDR: R$3.500-R$5.500 CLT + comissão | R$5.500-R$8.500 PJ
-- Account Executive Pleno: R$6.000-R$10.000 CLT + comissão | R$9.000-R$15.000 PJ
-- Account Executive Sênior: R$10.000-R$16.000 CLT + comissão | R$15.000-R$24.000 PJ
-- Gerente Comercial: R$14.000-R$22.000 CLT | R$20.000-R$32.000 PJ
-- Diretor Comercial: R$22.000-R$40.000 CLT | R$30.000-R$55.000 PJ
+┌─ SDR / BDR Júnior: CLT R$2.800-R$4.500 base + comissão (OTE R$5.000-R$7.000) | PJ R$4.500-R$7.000
+├─ SDR / BDR Sênior: CLT R$4.500-R$6.500 base + comissão (OTE R$8.000-R$12.000) | PJ R$7.000-R$10.000
+├─ Account Executive Pleno: CLT R$6.000-R$10.000 base + comissão (OTE R$12.000-R$20.000) | PJ R$9.000-R$15.000
+├─ Account Executive Sênior: CLT R$9.000-R$16.000 base + comissão (OTE R$18.000-R$32.000) | PJ R$14.000-R$24.000
+├─ Key Account Manager / Gerente de Contas: CLT R$10.000-R$18.000 | PJ R$15.000-R$27.000
+├─ Gerente Comercial (equipe 5-15 pessoas): CLT R$14.000-R$22.000 | PJ R$21.000-R$33.000
+├─ Head de Vendas / Sales Manager: CLT R$18.000-R$30.000 | PJ R$27.000-R$45.000
+└─ Diretor Comercial / VP Sales: CLT R$28.000-R$55.000 | PJ R$42.000-R$82.000
 
 VENDAS B2B SaaS / TECH:
-- AE SaaS Pleno: R$7.000-R$12.000 CLT + OTE 2x | R$10.000-R$18.000 PJ
-- AE SaaS Sênior: R$12.000-R$20.000 CLT + OTE 2x | R$18.000-R$28.000 PJ
-- Head of Sales: R$20.000-R$35.000 CLT | R$28.000-R$48.000 PJ
+┌─ SDR SaaS: CLT R$3.500-R$5.500 + comissão (OTE R$7.000-R$11.000) | PJ R$5.500-R$8.500
+├─ AE SaaS Pleno: CLT R$7.000-R$13.000 + OTE 80-100% base | PJ R$10.500-R$19.500
+├─ AE SaaS Sênior / Enterprise AE: CLT R$13.000-R$22.000 + OTE | PJ R$19.500-R$33.000
+├─ Head of Sales SaaS: CLT R$22.000-R$38.000 | PJ R$33.000-R$57.000
+└─ VP / CRO: CLT R$40.000-R$80.000 + equity | PJ R$60.000-R$120.000
 
-KEY MARKET FACTS:
-- PJ multiplier in BR: 1.35-1.50x over CLT gross (to cover INSS, IR, benefits)
-- São Paulo commands 20-35% premium over other cities
-- Senior professionals with 10+ years: top-of-range positioning justified
-- Robert Half, Randstad, Michael Page consultants: typically R$8.000-R$18.000 CLT depending on seniority
-- Remote work commands similar pay as SP in most cases
+RECURSOS HUMANOS GENERALISTA:
+┌─ Analista RH Pleno: CLT R$4.000-R$6.500 | PJ R$6.000-R$9.750
+├─ HRBP Pleno: CLT R$7.000-R$12.000 | PJ R$10.500-R$18.000
+├─ HRBP Sênior: CLT R$12.000-R$20.000 | PJ R$18.000-R$30.000
+└─ Gerente RH: CLT R$18.000-R$32.000 | PJ R$27.000-R$48.000
 
-CALIBRATION RULE: When seniority is high (10+ years) and the candidate has measurable results, ALWAYS position at the TOP THIRD of the range, not the middle. A headhunter with 18 years and Robert Half experience should NEVER be placed at the bottom of the range.
+CONSULTORIAS DE RECRUTAMENTO (Robert Half, Michael Page, Randstad, Hays):
+┌─ Consultor Júnior: CLT R$3.500-R$6.000 base + comissão (OTE R$7.000-R$12.000)
+├─ Consultor Pleno: CLT R$6.000-R$10.000 base + comissão (OTE R$12.000-R$22.000)
+├─ Consultor Sênior / Principal: CLT R$10.000-R$16.000 base + comissão (OTE R$20.000-R$40.000)
+└─ Manager / Diretor de BD: CLT R$15.000-R$25.000 base + comissão (OTE R$30.000-R$60.000)
+
+MARKETING / GROWTH:
+┌─ Analista de Marketing Pleno: CLT R$4.000-R$7.000 | PJ R$6.000-R$10.500
+├─ Especialista Marketing Sênior: CLT R$7.000-R$12.000 | PJ R$10.500-R$18.000
+├─ Head de Marketing: CLT R$16.000-R$28.000 | PJ R$24.000-R$42.000
+└─ CMO: CLT R$30.000-R$60.000 | PJ R$45.000-R$90.000
+
+OPERAÇÕES / CUSTOMER SUCCESS:
+┌─ CS Analyst Pleno: CLT R$4.500-R$7.500 | PJ R$6.750-R$11.250
+├─ Customer Success Manager Sênior: CLT R$8.000-R$14.000 | PJ R$12.000-R$21.000
+└─ Head of CS: CLT R$16.000-R$26.000 | PJ R$24.000-R$39.000
+
+═══ MULTIPLICADORES GEOGRÁFICOS ═══
+São Paulo capital: base 100%
+Rio de Janeiro: 85-95% do valor SP
+Belo Horizonte / Curitiba / Porto Alegre: 75-88%
+Recife / Fortaleza / Salvador / Manaus: 65-78%
+Remoto para empresa SP/RJ: 90-100% do valor presencial SP
+Remoto para empresa internacional (em BRL): +10-20% sobre SP
+
+═══ PRÊMIOS POR SENIORITY ═══
+Idiomas fluentes (inglês/espanhol): +8-15% sobre a faixa base
+MBA top-tier (FGV, Insper, USP): +5-12%
+Certificações especializadas relevantes: +5-10%
+18+ anos de experiência comprovada: posicionar no TOP 25% da faixa
+Histórico em multinacional (Fortune 500): +10-20%
+C-Level experience: +15-25%
+
+═══ REGIME CLT vs PJ ═══
+Multiplicador PJ: 1.40x a 1.55x sobre CLT gross (cobre: INSS patronal, férias, 13°, FGTS, benefícios, IR PJ)
+Regra prática: "Quanto seria o equivalente em PJ?" = CLT bruto × 1.45 (faixa média)
+
+═══ REGRAS DE APLICAÇÃO ═══
+1. NUNCA invente uma faixa — use SEMPRE a tabela acima como base
+2. Se o cargo não está na tabela, use a categoria mais próxima e declare "estimativa baseada em cargo similar"
+3. Profissionais com 10+ anos em multinacional + resultados comprovados: topo da faixa, não mediana
+4. Confidence "high" = cargo está exatamente na tabela + localização conhecida + seniority clara
+5. Confidence "medium" = cargo aproximado ou localização não confirmada  
+6. Confidence "low" = área não mapeada ou informações insuficientes — mas ainda deve dar números, não ranges vagos
+7. O rationale DEVE mencionar: (a) o cargo específico usado como base, (b) o fator que ancora o valor mais alto, (c) o fator que poderia pressionar para baixo
 
 ════════════════════════════════════════════════════════════
   MULTI-CAREER ANALYSIS — HYBRID PROFESSIONALS
