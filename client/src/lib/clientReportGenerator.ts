@@ -1,42 +1,27 @@
 /**
  * clientReportGenerator.ts
- * Gera o relatório PDF profissional para entrega ao cliente.
- * Usa browser print rendering — SEM html2canvas, SEM dependências externas.
- * Formato A4, margens limpas, tipografia profissional, quebras de página.
+ * Relatório profissional de entrega ao cliente.
+ * Browser print rendering — SEM html2canvas. A4, margens limpas, tipografia profissional.
+ *
+ * Páginas:
+ *   1 — Capa
+ *   2 — Score ATS + Análise detalhada
+ *   3 — Keywords + Gaps + Alterações no CV
+ *   4 — LinkedIn Optimization
+ *   5 — Salário + Perfil do Recrutador + Próximos Passos
  */
 
 import type { AnalysisResult } from "@/components/AnalysisLayout";
 
-function scoreColor(score: number): string {
-  if (score >= 75) return "#16a34a";
-  if (score >= 55) return "#d97706";
-  return "#dc2626";
+function scoreColor(s: number) { return s >= 75 ? "#16a34a" : s >= 55 ? "#d97706" : "#dc2626"; }
+function scoreLabel(s: number) { return s >= 80 ? "Excelente" : s >= 65 ? "Bom" : s >= 50 ? "Regular" : "Precisa melhorar"; }
+function fmtBRL(n: number) { return new Intl.NumberFormat("pt-BR").format(n); }
+function today() { return new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }); }
+function esc(s: string) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
-function scoreLabel(score: number): string {
-  if (score >= 80) return "Excelente";
-  if (score >= 65) return "Bom";
-  if (score >= 50) return "Regular";
-  return "Precisa melhorar";
-}
-
-function fmtBRL(n: number): string {
-  return new Intl.NumberFormat("pt-BR").format(n);
-}
-
-function today(): string {
-  return new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
-}
-
-function esc(s: string): string {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function buildReportHTML(results: AnalysisResult, clientName: string): string {
+function buildHTML(results: AnalysisResult, clientName: string): string {
   const ats       = results.atsScore ?? results.matchScore ?? 0;
   const projected = results.projectedMatchScore ?? 0;
   const gain      = Math.round(projected - ats);
@@ -45,8 +30,9 @@ function buildReportHTML(results: AnalysisResult, clientName: string): string {
   const salary    = results.salaryRange;
   const hasSalary = salary && salary.cltMin > 0;
   const changes   = results.changes ?? [];
+  const li        = results.linkedinOptimization;
 
-  const breakdownRows = results.atsScoreBreakdown ? [
+  const breakdown = results.atsScoreBreakdown ? [
     ["Parseabilidade ATS",       results.atsScoreBreakdown.parsing,          20],
     ["Match de palavras-chave",  results.atsScoreBreakdown.keywordMatch,      25],
     ["Qualidade da experiência", results.atsScoreBreakdown.experienceQuality, 20],
@@ -63,130 +49,128 @@ function buildReportHTML(results: AnalysisResult, clientName: string): string {
 <style>
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
   @page{size:A4;margin:0}
-  body{font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;font-size:10pt;color:#1a1a2e;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{font-family:Arial,'Helvetica Neue',sans-serif;font-size:10pt;color:#1a1a2e;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 
-  /* Cover */
-  .cover{width:210mm;height:297mm;background:linear-gradient(160deg,#0a0f2e 0%,#0f2057 45%,#1a3a9e 100%);display:flex;flex-direction:column;justify-content:space-between;padding:0;page-break-after:always;position:relative;overflow:hidden}
-  .cover-deco-1{position:absolute;top:-60px;right:-60px;width:300px;height:300px;border-radius:50%;background:rgba(255,255,255,.04)}
-  .cover-deco-2{position:absolute;bottom:80px;left:-80px;width:350px;height:350px;border-radius:50%;background:rgba(255,255,255,.03)}
-  .cover-top{padding:52px 56px 0}
+  /* ── Cover ── */
+  .cover{width:210mm;height:297mm;background:linear-gradient(150deg,#0a0f2e 0%,#0f2057 50%,#1a3a9e 100%);display:flex;flex-direction:column;justify-content:space-between;page-break-after:always;position:relative;overflow:hidden}
+  .deco1{position:absolute;top:-60px;right:-60px;width:280px;height:280px;border-radius:50%;background:rgba(255,255,255,.04)}
+  .deco2{position:absolute;bottom:60px;left:-80px;width:320px;height:320px;border-radius:50%;background:rgba(255,255,255,.03)}
+  .cover-top{padding:52px 56px 0;position:relative;z-index:1}
   .cover-brand{font-size:8pt;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#93c5fd;margin-bottom:48px}
   .cover-label{font-size:8pt;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#60a5fa;margin-bottom:16px}
-  .cover-name{font-size:32pt;font-weight:700;line-height:1.1;color:#fff;margin-bottom:12px;font-family:Georgia,serif}
-  .cover-role{font-size:12pt;color:#bfdbfe;margin-bottom:40px}
-  .cover-score-block{display:inline-flex;align-items:center;gap:20px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:16px 24px;margin-bottom:32px}
-  .cover-score-num{font-size:36pt;font-weight:700;line-height:1}
-  .cover-score-label{font-size:8pt;color:#93c5fd;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px}
-  .cover-score-verdict{font-size:14pt;font-weight:600;color:#fff;margin-bottom:4px}
-  .cover-score-gain{font-size:9pt;color:#86efac}
-  .cover-bottom{padding:32px 56px;border-top:1px solid rgba(255,255,255,.1)}
-  .cover-meta-line{font-size:8.5pt;color:rgba(255,255,255,.5);display:flex;gap:24px}
+  .cover-name{font-size:30pt;font-weight:700;line-height:1.1;color:#fff;margin-bottom:12px;font-family:Georgia,serif}
+  .cover-role{font-size:12pt;color:#bfdbfe;margin-bottom:40px;font-weight:400}
+  .score-box{display:inline-flex;align-items:center;gap:20px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:16px 24px}
+  .score-num{font-size:34pt;font-weight:700;line-height:1}
+  .score-meta-label{font-size:8pt;color:#93c5fd;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px}
+  .score-meta-verdict{font-size:13pt;font-weight:700;color:#fff;margin-bottom:4px}
+  .score-meta-gain{font-size:9pt;color:#86efac}
+  .cover-bottom{padding:32px 56px;border-top:1px solid rgba(255,255,255,.12);position:relative;z-index:1}
+  .cover-meta{font-size:8pt;color:rgba(255,255,255,.45);display:flex;gap:24px}
 
-  /* Content pages */
-  .content-page{width:210mm;min-height:297mm;padding:40px 52px 48px;display:flex;flex-direction:column;page-break-after:always}
-  .content-page:last-child{page-break-after:avoid}
+  /* ── Content pages ── */
+  .page{width:210mm;min-height:297mm;padding:38px 50px 44px;display:flex;flex-direction:column;page-break-after:always}
+  .page:last-child{page-break-after:avoid}
+  .page-footer{margin-top:auto;padding-top:14px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:7pt;color:#94a3b8}
+  .page-footer strong{color:#1e3a8a}
 
-  /* Sections */
-  .section{margin-bottom:26px;page-break-inside:avoid}
-  .section-title{font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#1e3a8a;border-bottom:2px solid #1e3a8a;padding-bottom:6px;margin-bottom:14px}
+  /* ── Section ── */
+  .section{margin-bottom:24px;page-break-inside:avoid}
+  .section-title{font-size:7pt;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#1e3a8a;border-bottom:2px solid #1e3a8a;padding-bottom:5px;margin-bottom:12px}
 
-  /* Score hero */
-  .score-hero{display:flex;align-items:center;gap:24px;background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid #1e3a8a;border-radius:8px;padding:20px 24px;margin-bottom:28px;page-break-inside:avoid}
-  .score-circle{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:20pt;font-weight:700;color:#fff}
-  .score-text h3{font-size:12pt;font-weight:700;color:#1e293b;margin-bottom:4px}
+  /* ── Score hero ── */
+  .score-hero{display:flex;align-items:center;gap:22px;background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid #1e3a8a;border-radius:8px;padding:18px 22px;margin-bottom:24px;page-break-inside:avoid}
+  .score-circle{width:68px;height:68px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18pt;font-weight:700;color:#fff;flex-shrink:0}
+  .score-text h3{font-size:11pt;font-weight:700;color:#1e293b;margin-bottom:3px}
   .score-text p{font-size:9pt;color:#64748b;line-height:1.5}
-  .score-pills{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .pills{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap}
   .pill{font-size:7.5pt;font-weight:600;padding:3px 10px;border-radius:20px}
   .pill-blue{background:#dbeafe;color:#1e40af}
   .pill-green{background:#dcfce7;color:#166534}
   .pill-amber{background:#fef3c7;color:#92400e}
   .pill-purple{background:#ede9fe;color:#5b21b6}
 
-  /* Bars */
-  .bar-row{margin-bottom:10px;page-break-inside:avoid}
-  .bar-label-row{display:flex;justify-content:space-between;align-items:center;font-size:8.5pt;color:#334155;margin-bottom:4px}
+  /* ── Bars ── */
+  .bar-row{margin-bottom:9px;page-break-inside:avoid}
+  .bar-labels{display:flex;justify-content:space-between;font-size:8.5pt;color:#334155;margin-bottom:3px}
   .bar-track{height:7px;background:#e2e8f0;border-radius:4px;overflow:hidden}
   .bar-fill{height:100%;border-radius:4px}
 
-  /* Tags */
-  .tag-cloud{display:flex;flex-wrap:wrap;gap:5px}
+  /* ── Tags ── */
+  .tags{display:flex;flex-wrap:wrap;gap:5px}
   .tag{font-size:8pt;font-weight:500;padding:3px 9px;border-radius:5px;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
   .tag-miss{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
+  .tag-li{background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe}
 
-  /* Lists */
+  /* ── Lists ── */
   .check-list{list-style:none}
-  .check-list li{font-size:9pt;color:#334155;padding:5px 0 5px 20px;border-bottom:1px solid #f1f5f9;position:relative;line-height:1.5}
-  .check-list li::before{content:'✓';position:absolute;left:0;color:#16a34a;font-weight:700;font-size:10pt}
-  .risk-list li::before{content:'⚠';color:#d97706;font-size:9pt}
-  .step-list li::before{content:'→';color:#1e3a8a;font-size:10pt}
+  .check-list li{font-size:9pt;color:#334155;padding:4px 0 4px 18px;border-bottom:1px solid #f1f5f9;position:relative;line-height:1.5}
+  .check-list li::before{content:'✓';position:absolute;left:0;color:#16a34a;font-weight:700}
+  .risk-list li::before{content:'⚠';color:#d97706}
+  .step-list li::before{content:'→';color:#1e3a8a}
 
-  /* Two col */
-  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  /* ── Two-col ── */
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 
-  /* Salary */
-  .salary-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;page-break-inside:avoid}
-  .salary-card .s-label{font-size:7.5pt;color:#64748b;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px}
-  .salary-card .s-range{font-size:13pt;font-weight:700;color:#1e293b;margin-bottom:3px}
-  .salary-card .s-sub{font-size:7.5pt;color:#94a3b8}
+  /* ── Cards ── */
+  .card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;page-break-inside:avoid}
+  .card-label{font-size:7.5pt;color:#64748b;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px}
+  .card-value{font-size:13pt;font-weight:700;color:#1e293b;margin-bottom:3px}
+  .card-sub{font-size:7.5pt;color:#94a3b8}
 
-  /* Recruiter */
-  .rp-box{background:#fafafa;border-left:3px solid #1e3a8a;border-radius:0 6px 6px 0;padding:12px 14px;margin-bottom:10px;page-break-inside:avoid}
+  /* ── Table ── */
+  .changes-table{width:100%;border-collapse:collapse;font-size:8.5pt}
+  .changes-table th{background:#f1f5f9;color:#475569;font-weight:700;font-size:7.5pt;text-transform:uppercase;letter-spacing:.8px;padding:8px 10px;text-align:left;border-bottom:2px solid #e2e8f0}
+  .changes-table td{padding:7px 10px;color:#334155;border-bottom:1px solid #f1f5f9;vertical-align:top;line-height:1.4}
+  .impact-alto{background:#dcfce7;color:#166534;padding:2px 7px;border-radius:10px;font-size:7pt;font-weight:700;white-space:nowrap}
+  .impact-medio{background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:10px;font-size:7pt;font-weight:700;white-space:nowrap}
+  .impact-baixo{background:#f1f5f9;color:#475569;padding:2px 7px;border-radius:10px;font-size:7pt;font-weight:700;white-space:nowrap}
+
+  /* ── LinkedIn ── */
+  .li-headline{background:#eff6ff;border:1px solid #bfdbfe;border-left:4px solid #1d4ed8;border-radius:0 8px 8px 0;padding:12px 14px;margin-bottom:12px}
+  .li-headline-label{font-size:7pt;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px}
+  .li-headline-text{font-size:10.5pt;font-weight:600;color:#1e293b;line-height:1.5}
+  .li-about{background:#fafafa;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:12px}
+  .li-about-label{font-size:7pt;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+  .li-about-text{font-size:9pt;color:#334155;line-height:1.6;white-space:pre-wrap}
+
+  /* ── Recruiter box ── */
+  .rp-box{background:#fafafa;border-left:3px solid #1e3a8a;border-radius:0 6px 6px 0;padding:12px 14px;margin-bottom:9px;page-break-inside:avoid}
   .rp-label{font-size:7.5pt;font-weight:700;color:#1e3a8a;text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px}
   .rp-text{font-size:9pt;color:#334155;line-height:1.55}
 
-  /* Changes table */
-  .changes-table{width:100%;border-collapse:collapse;font-size:8.5pt}
-  .changes-table th{background:#f1f5f9;color:#475569;font-weight:700;font-size:7.5pt;text-transform:uppercase;letter-spacing:.8px;padding:8px 10px;text-align:left;border-bottom:2px solid #e2e8f0}
-  .changes-table td{padding:7px 10px;color:#334155;border-bottom:1px solid #f1f5f9;vertical-align:top;line-height:1.45}
-  .impact-alto{background:#dcfce7;color:#166534;padding:2px 7px;border-radius:10px;font-size:7pt;font-weight:700}
-  .impact-medio{background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:10px;font-size:7pt;font-weight:700}
-  .impact-baixo{background:#f1f5f9;color:#475569;padding:2px 7px;border-radius:10px;font-size:7pt;font-weight:700}
-
-  /* Summary */
-  .summary-box{background:linear-gradient(135deg,#f0f7ff 0%,#e8f2ff 100%);border:1px solid #bfdbfe;border-radius:10px;padding:20px 24px;margin-bottom:24px}
+  /* ── Summary ── */
+  .summary-box{background:linear-gradient(135deg,#f0f7ff,#e8f2ff);border:1px solid #bfdbfe;border-radius:10px;padding:18px 22px;margin-bottom:20px}
   .summary-box p{font-size:9.5pt;color:#1e3a8a;line-height:1.65}
 
-  /* Footer */
-  .page-footer{margin-top:auto;padding-top:16px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;font-size:7pt;color:#94a3b8}
-  .page-footer strong{color:#1e3a8a}
-
-  @media print{
-    html,body{background:white!important}
-    .cover{page-break-after:always!important}
-    .content-page{page-break-after:always!important}
-  }
-  @media screen{
-    body{background:#94a3b8;padding:20px}
-    .cover,.content-page{box-shadow:0 4px 32px rgba(0,0,0,.2);margin-bottom:20px}
-    .content-page{min-height:auto}
-  }
+  @media print{html,body{background:#fff!important}.cover{page-break-after:always!important}.page{page-break-after:always!important}}
+  @media screen{body{background:#94a3b8;padding:20px}.cover,.page{box-shadow:0 4px 32px rgba(0,0,0,.2);margin-bottom:20px}.page{min-height:auto}}
 </style>
 </head>
 <body>
 
-<!-- COVER -->
+<!-- ════════ CAPA ════════ -->
 <div class="cover">
-  <div class="cover-deco-1"></div>
-  <div class="cover-deco-2"></div>
+  <div class="deco1"></div><div class="deco2"></div>
   <div class="cover-top">
     <div class="cover-brand">Leone Consultoria de Carreira</div>
     <div class="cover-label">Relatório de Reposicionamento Profissional</div>
     <div class="cover-name">${esc(clientName)}</div>
     <div class="cover-role">
-      ${results.jobTitle ? `Análise para: <strong style="color:#fff">${esc(results.jobTitle)}</strong>` : "Análise Geral de CV e Perfil Profissional"}
+      ${results.jobTitle ? `Análise para: <strong style="color:#fff">${esc(results.jobTitle)}</strong>` : "Análise Holística de CV e Perfil Profissional"}
       ${results.seniorityLevel ? ` &nbsp;·&nbsp; ${esc(results.seniorityLevel)}` : ""}
     </div>
-    <div class="cover-score-block">
-      <div class="cover-score-num" style="color:${color}">${Math.round(ats)}</div>
+    <div class="score-box">
+      <div class="score-num" style="color:${color}">${Math.round(ats)}</div>
       <div>
-        <div class="cover-score-label">Score ATS atual</div>
-        <div class="cover-score-verdict">${label}</div>
-        ${gain > 0 ? `<div class="cover-score-gain">↑ Score projetado: ${Math.round(projected)} (+${gain} pts)</div>` : ""}
+        <div class="score-meta-label">Score ATS atual</div>
+        <div class="score-meta-verdict">${label}</div>
+        ${gain > 0 ? `<div class="score-meta-gain">↑ Projetado: ${Math.round(projected)} (+${gain} pts)</div>` : ""}
       </div>
     </div>
   </div>
   <div class="cover-bottom">
-    <div class="cover-meta-line">
+    <div class="cover-meta">
       <span>Emitido em ${today()}</span>
       <span>Documento confidencial</span>
       <span>Leone Consultoria de Carreira</span>
@@ -194,30 +178,30 @@ function buildReportHTML(results: AnalysisResult, clientName: string): string {
   </div>
 </div>
 
-<!-- PAGE 2: SCORE + KEYWORDS -->
-<div class="content-page">
+<!-- ════════ PÁG 2: SCORE + ANÁLISE ATS ════════ -->
+<div class="page">
   <div class="score-hero">
     <div class="score-circle" style="background:${color}">${Math.round(ats)}</div>
     <div class="score-text">
       <h3>Score ATS: ${label}</h3>
-      <p>CV analisado contra os principais sistemas de triagem automática (ATS)${results.jobTitle ? ` para a vaga de <strong>${esc(results.jobTitle)}</strong>` : ""}.${gain > 0 ? ` Com as optimizações, o score projetado sobe para <strong>${Math.round(projected)}</strong> (+${gain} pts).` : ""}</p>
-      <div class="score-pills">
-        <span class="pill pill-blue">Score atual: ${Math.round(ats)}/100</span>
-        ${gain > 0 ? `<span class="pill pill-green">Score projetado: ${Math.round(projected)}/100</span>` : ""}
+      <p>CV analisado contra os principais sistemas ATS do mercado brasileiro${results.jobTitle ? ` para a vaga de <strong>${esc(results.jobTitle)}</strong>` : ""}.${gain > 0 ? ` Com as optimizações, o score projetado sobe para <strong>${Math.round(projected)}/100</strong> (+${gain} pts).` : ""}</p>
+      <div class="pills">
+        <span class="pill pill-blue">Atual: ${Math.round(ats)}/100</span>
+        ${gain > 0 ? `<span class="pill pill-green">Projetado: ${Math.round(projected)}/100</span>` : ""}
         ${gain > 0 ? `<span class="pill pill-amber">Ganho: +${gain} pts</span>` : ""}
         ${results.seniorityLevel ? `<span class="pill pill-purple">${esc(results.seniorityLevel)}</span>` : ""}
       </div>
     </div>
   </div>
 
-  ${breakdownRows.length > 0 ? `
+  ${breakdown.length > 0 ? `
   <div class="section">
-    <div class="section-title">Análise Detalhada ATS por Categoria</div>
-    ${breakdownRows.map(([lbl, val, max]) => {
+    <div class="section-title">Breakdown ATS por categoria</div>
+    ${breakdown.map(([lbl, val, max]) => {
       const pct = Math.round(((val as number) / (max as number)) * 100);
       const c   = pct >= 75 ? "#16a34a" : pct >= 50 ? "#d97706" : "#dc2626";
       return `<div class="bar-row">
-        <div class="bar-label-row"><span>${esc(String(lbl))}</span><span style="font-weight:700;color:${c}">${val}/${max} (${pct}%)</span></div>
+        <div class="bar-labels"><span>${esc(String(lbl))}</span><span style="font-weight:700;color:${c}">${val}/${max} (${pct}%)</span></div>
         <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${c}"></div></div>
       </div>`;
     }).join("")}
@@ -225,55 +209,55 @@ function buildReportHTML(results: AnalysisResult, clientName: string): string {
 
   ${results.strengths?.length ? `
   <div class="section">
-    <div class="section-title">Pontos Fortes Identificados</div>
-    <ul class="check-list">${results.strengths.slice(0, 6).map(s => `<li>${esc(s)}</li>`).join("")}</ul>
+    <div class="section-title">Pontos fortes identificados</div>
+    <ul class="check-list">${results.strengths.slice(0,6).map(s=>`<li>${esc(s)}</li>`).join("")}</ul>
   </div>` : ""}
 
-  ${results.keywords?.length ? `
+  ${results.careerTrajectory ? `
   <div class="section">
-    <div class="section-title">Palavras-Chave Presentes no CV</div>
-    <div class="tag-cloud">${results.keywords.slice(0, 24).map(k => `<span class="tag">${esc(k)}</span>`).join("")}</div>
+    <div class="section-title">Trajectória de carreira</div>
+    <p style="font-size:9pt;color:#334155;line-height:1.6">${esc(results.careerTrajectory)}</p>
   </div>` : ""}
 
   <div class="page-footer">
     <strong>Leone Consultoria de Carreira</strong>
-    <span>${esc(clientName)} &nbsp;·&nbsp; ${today()}</span>
+    <span>${esc(clientName)} · ${today()}</span>
     <span>Página 2</span>
   </div>
 </div>
 
-<!-- PAGE 3: GAPS + CHANGES -->
-<div class="content-page">
+<!-- ════════ PÁG 3: KEYWORDS + GAPS + ALTERAÇÕES ════════ -->
+<div class="page">
+  ${results.keywords?.length ? `
+  <div class="section">
+    <div class="section-title">Keywords presentes no CV</div>
+    <div class="tags">${results.keywords.slice(0,24).map(k=>`<span class="tag">${esc(k)}</span>`).join("")}</div>
+  </div>` : ""}
+
   ${results.missingKeywords?.length ? `
   <div class="section">
-    <div class="section-title">Palavras-Chave a Adicionar ao CV</div>
-    <div class="tag-cloud">${results.missingKeywords.slice(0, 20).map(k => `<span class="tag tag-miss">${esc(k)}</span>`).join("")}</div>
-    <p style="font-size:8.5pt;color:#64748b;margin-top:10px;line-height:1.5">Estas palavras-chave estão ausentes mas são frequentemente exigidas nas vagas desta área. Incorpore-as naturalmente nas secções de resumo, competências e experiências.</p>
+    <div class="section-title">Keywords em falta — adicionar ao CV e LinkedIn</div>
+    <div class="tags">${results.missingKeywords.slice(0,20).map(k=>`<span class="tag tag-miss">${esc(k)}</span>`).join("")}</div>
+    <p style="font-size:8pt;color:#64748b;margin-top:8px;line-height:1.5">Incorporar naturalmente nas secções de Resumo, Competências e Experiências — tanto no CV como no perfil LinkedIn.</p>
   </div>` : ""}
 
   ${results.weaknesses?.length ? `
   <div class="section">
-    <div class="section-title">Pontos de Melhoria Prioritários</div>
-    <ul class="check-list risk-list">${results.weaknesses.slice(0, 5).map(w => `<li>${esc(w)}</li>`).join("")}</ul>
-  </div>` : ""}
-
-  ${results.competitiveEdges?.length ? `
-  <div class="section">
-    <div class="section-title">Vantagens Competitivas</div>
-    <ul class="check-list">${results.competitiveEdges.slice(0, 5).map(e => `<li>${esc(e)}</li>`).join("")}</ul>
+    <div class="section-title">Pontos de melhoria prioritários</div>
+    <ul class="check-list risk-list">${results.weaknesses.slice(0,5).map(w=>`<li>${esc(w)}</li>`).join("")}</ul>
   </div>` : ""}
 
   ${changes.length > 0 ? `
   <div class="section">
-    <div class="section-title">Alterações Aplicadas ao CV Optimizado</div>
+    <div class="section-title">Alterações aplicadas ao CV optimizado</div>
     <table class="changes-table">
-      <thead><tr><th>Secção</th><th>Alteração</th><th>Impacto</th></tr></thead>
+      <thead><tr><th>Secção</th><th>Alteração realizada</th><th>Impacto</th></tr></thead>
       <tbody>
-        ${changes.slice(0, 10).map(c => `
+        ${changes.slice(0,10).map(c=>`
         <tr>
           <td style="font-weight:600;white-space:nowrap">${esc(c.section)}</td>
           <td>${esc(c.description)}</td>
-          <td><span class="impact-${c.impact}">${c.impact === "alto" ? "Alto" : c.impact === "medio" ? "Médio" : "Baixo"}</span></td>
+          <td><span class="impact-${c.impact}">${c.impact==="alto"?"Alto":c.impact==="medio"?"Médio":"Baixo"}</span></td>
         </tr>`).join("")}
       </tbody>
     </table>
@@ -281,32 +265,78 @@ function buildReportHTML(results: AnalysisResult, clientName: string): string {
 
   ${results.suggestions?.length ? `
   <div class="section">
-    <div class="section-title">Recomendações de Melhoria</div>
-    <ul class="check-list step-list">${results.suggestions.slice(0, 6).map(s => `<li>${esc(s)}</li>`).join("")}</ul>
+    <div class="section-title">Recomendações de melhoria</div>
+    <ul class="check-list step-list">${results.suggestions.slice(0,6).map(s=>`<li>${esc(s)}</li>`).join("")}</ul>
   </div>` : ""}
 
   <div class="page-footer">
     <strong>Leone Consultoria de Carreira</strong>
-    <span>${esc(clientName)} &nbsp;·&nbsp; ${today()}</span>
+    <span>${esc(clientName)} · ${today()}</span>
     <span>Página 3</span>
   </div>
 </div>
 
-<!-- PAGE 4: SALARY + RECRUITER + NEXT STEPS -->
-<div class="content-page">
+<!-- ════════ PÁG 4: LINKEDIN ════════ -->
+<div class="page">
+  <div class="section-title" style="margin-bottom:16px;font-size:8pt">LinkedIn — Plano de Optimização do Perfil</div>
+
+  ${li?.headline ? `
+  <div class="li-headline">
+    <div class="li-headline-label">📌 Headline sugerida (copiar e colar no LinkedIn)</div>
+    <div class="li-headline-text">${esc(li.headline)}</div>
+  </div>` : ""}
+
+  ${li?.about ? `
+  <div class="li-about">
+    <div class="li-about-label">📝 Resumo / About — Secção completa</div>
+    <div class="li-about-text">${esc(li.about)}</div>
+  </div>` : ""}
+
+  ${li?.featuredSection ? `
+  <div class="section">
+    <div class="section-title">Secção em destaque (Featured)</div>
+    <p style="font-size:9pt;color:#334155;line-height:1.6">${esc(li.featuredSection)}</p>
+  </div>` : ""}
+
+  ${li?.skillsToAdd?.length ? `
+  <div class="section">
+    <div class="section-title">Skills a adicionar / priorizar para endorsements</div>
+    <div class="tags">${li.skillsToAdd.map(s=>`<span class="tag tag-li">${esc(s)}</span>`).join("")}</div>
+  </div>` : ""}
+
+  ${li?.profileTips?.length ? `
+  <div class="section">
+    <div class="section-title">Dicas específicas para o perfil</div>
+    <ul class="check-list step-list">${li.profileTips.map(t=>`<li>${esc(t)}</li>`).join("")}</ul>
+  </div>` : ""}
+
+  ${!li ? `
+  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:24px;text-align:center">
+    <p style="font-size:9pt;color:#64748b">Optimização do LinkedIn disponível na próxima análise.</p>
+  </div>` : ""}
+
+  <div class="page-footer">
+    <strong>Leone Consultoria de Carreira</strong>
+    <span>${esc(clientName)} · ${today()}</span>
+    <span>Página 4</span>
+  </div>
+</div>
+
+<!-- ════════ PÁG 5: SALÁRIO + RECRUTADOR + PRÓXIMOS PASSOS ════════ -->
+<div class="page">
   ${hasSalary ? `
   <div class="section">
-    <div class="section-title">Inteligência Salarial de Mercado</div>
-    <div class="two-col" style="margin-bottom:12px">
-      <div class="salary-card">
-        <div class="s-label">Regime CLT — Faixa Mensal Bruta</div>
-        <div class="s-range">R$ ${fmtBRL(salary!.cltMin)} – R$ ${fmtBRL(salary!.cltMax)}</div>
-        <div class="s-sub">Confiança: ${salary!.confidence === "high" ? "Alta" : salary!.confidence === "medium" ? "Média" : "Baixa"}</div>
+    <div class="section-title">Inteligência salarial — Mercado BR 2025</div>
+    <div class="two-col" style="margin-bottom:10px">
+      <div class="card">
+        <div class="card-label">Regime CLT — Faixa mensal bruta</div>
+        <div class="card-value">R$ ${fmtBRL(salary!.cltMin)} – R$ ${fmtBRL(salary!.cltMax)}</div>
+        <div class="card-sub">Confiança: ${salary!.confidence==="high"?"Alta":salary!.confidence==="medium"?"Média":"Baixa"}</div>
       </div>
-      <div class="salary-card">
-        <div class="s-label">Regime PJ — Faixa Mensal</div>
-        <div class="s-range">R$ ${fmtBRL(salary!.pjMin)} – R$ ${fmtBRL(salary!.pjMax)}</div>
-        <div class="s-sub">Multiplicador 1.35–1.50×</div>
+      <div class="card">
+        <div class="card-label">Regime PJ — Faixa mensal gross</div>
+        <div class="card-value">R$ ${fmtBRL(salary!.pjMin)} – R$ ${fmtBRL(salary!.pjMax)}</div>
+        <div class="card-sub">Multiplicador 1.35–1.50×</div>
       </div>
     </div>
     ${salary!.rationale ? `<p style="font-size:8.5pt;color:#64748b;line-height:1.5">${esc(salary!.rationale)}</p>` : ""}
@@ -314,36 +344,36 @@ function buildReportHTML(results: AnalysisResult, clientName: string): string {
 
   ${results.negotiationTips?.length ? `
   <div class="section">
-    <div class="section-title">Estratégia de Negociação Salarial</div>
-    <ul class="check-list step-list">${results.negotiationTips.slice(0, 4).map(t => `<li>${esc(t)}</li>`).join("")}</ul>
+    <div class="section-title">Estratégia de negociação salarial</div>
+    <ul class="check-list step-list">${results.negotiationTips.slice(0,4).map(t=>`<li>${esc(t)}</li>`).join("")}</ul>
   </div>` : ""}
 
   ${results.recruiterProfile ? `
   <div class="section">
-    <div class="section-title">Perfil do Recrutador-Alvo</div>
-    ${results.recruiterProfile.idealNarrative ? `<div class="rp-box"><div class="rp-label">Narrativa Ideal</div><div class="rp-text">${esc(results.recruiterProfile.idealNarrative)}</div></div>` : ""}
-    ${results.recruiterProfile.recruiterTriggers?.length ? `<div class="rp-box" style="border-left-color:#16a34a"><div class="rp-label">O que Atrai o Recrutador</div><div class="rp-text">${results.recruiterProfile.recruiterTriggers.slice(0,3).map(esc).join(" &nbsp;·&nbsp; ")}</div></div>` : ""}
-    ${results.recruiterProfile.recruiterFears?.length ? `<div class="rp-box" style="border-left-color:#d97706"><div class="rp-label">O que Pode Preocupar o Recrutador</div><div class="rp-text">${results.recruiterProfile.recruiterFears.slice(0,3).map(esc).join(" &nbsp;·&nbsp; ")}</div></div>` : ""}
+    <div class="section-title">Perfil do recrutador-alvo</div>
+    ${results.recruiterProfile.idealNarrative ? `<div class="rp-box"><div class="rp-label">Narrativa ideal</div><div class="rp-text">${esc(results.recruiterProfile.idealNarrative)}</div></div>` : ""}
+    ${results.recruiterProfile.recruiterTriggers?.length ? `<div class="rp-box" style="border-left-color:#16a34a"><div class="rp-label">O que atrai o recrutador</div><div class="rp-text">${results.recruiterProfile.recruiterTriggers.slice(0,3).map(esc).join(" · ")}</div></div>` : ""}
+    ${results.recruiterProfile.recruiterFears?.length ? `<div class="rp-box" style="border-left-color:#d97706"><div class="rp-label">O que pode preocupar o recrutador</div><div class="rp-text">${results.recruiterProfile.recruiterFears.slice(0,3).map(esc).join(" · ")}</div></div>` : ""}
   </div>` : ""}
 
   <div class="section">
-    <div class="section-title">Próximos Passos Recomendados</div>
+    <div class="section-title">Próximos passos recomendados</div>
     <ul class="check-list step-list">
-      <li>Substituir o CV original pelo CV optimizado entregue em anexo</li>
-      <li>Atualizar o headline do LinkedIn com as palavras-chave identificadas</li>
-      <li>Adicionar as palavras-chave em falta nas secções "Sobre" e nas experiências</li>
-      ${results.missingKeywords?.length ? `<li>Incorporar gradualmente: <strong>${results.missingKeywords.slice(0,4).map(esc).join(", ")}</strong></li>` : ""}
-      <li>Solicitar recomendações de ex-gestores no LinkedIn</li>
-      <li>Alinhar o perfil do LinkedIn com o novo posicionamento do CV</li>
+      <li>Substituir o CV actual pelo CV optimizado entregue em anexo</li>
+      <li>Atualizar a headline do LinkedIn com o texto sugerido na página anterior</li>
+      <li>Copiar o novo resumo "About" para o perfil LinkedIn</li>
+      <li>Adicionar as ${results.linkedinOptimization?.skillsToAdd?.length ?? 0} skills sugeridas e solicitar endorsements</li>
+      ${results.missingKeywords?.length ? `<li>Incorporar no CV e LinkedIn: <strong>${results.missingKeywords.slice(0,4).map(esc).join(", ")}</strong></li>` : ""}
+      <li>Solicitar recomendações de ex-gestores e colegas no LinkedIn</li>
     </ul>
   </div>
 
   <div class="summary-box">
     <p>
-      <strong>Resumo executivo:</strong> Com score ATS atual de <strong>${Math.round(ats)}/100</strong> (${label.toLowerCase()}),
-      este CV apresenta ${results.strengths?.length ? `${results.strengths.length} pontos fortes identificados` : "potencial relevante"}.
-      ${gain > 0 ? `Após as optimizações, o score projetado de <strong>${Math.round(projected)}/100</strong> representa +${gain} pontos — aumento significativo na taxa de passagem nos filtros ATS.` : ""}
-      ${results.missingKeywords?.length ? ` A incorporação das ${results.missingKeywords.length} palavras-chave identificadas é prioridade imediata.` : ""}
+      <strong>Resumo executivo:</strong> Score ATS de <strong>${Math.round(ats)}/100</strong> (${label.toLowerCase()})
+      ${results.strengths?.length ? `— ${results.strengths.length} pontos fortes identificados.` : "."}
+      ${gain > 0 ? ` Com as optimizações aplicadas, o score projetado de <strong>${Math.round(projected)}/100</strong> representa +${gain} pontos — aumento significativo na taxa de passagem pelos filtros ATS.` : ""}
+      ${results.missingKeywords?.length ? ` Prioridade imediata: incorporar as ${results.missingKeywords.length} keywords identificadas no CV e no LinkedIn.` : ""}
     </p>
   </div>
 
@@ -362,18 +392,15 @@ export async function generateClientReport(
   results: AnalysisResult,
   clientName: string = "Candidato"
 ): Promise<void> {
-  const html     = buildReportHTML(results, clientName);
-  const safeName = clientName.replace(/[^a-zA-ZÀ-ú\s]/g, "").trim().replace(/\s+/g, "_");
+  const html     = buildHTML(results, clientName);
+  const safeName = clientName.replace(/[^a-zA-ZÀ-ú\s]/g,"").trim().replace(/\s+/g,"_");
 
-  const win = window.open("", "_blank", "width=900,height=750,scrollbars=yes");
+  const win = window.open("", "_blank", "width=960,height=800,scrollbars=yes");
   if (!win) {
-    // Fallback: download HTML for manual printing
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
-    a.href     = url;
-    a.download = `Relatorio_${safeName}.html`;
-    a.click();
+    a.href = url; a.download = `Relatorio_${safeName}.html`; a.click();
     URL.revokeObjectURL(url);
     return;
   }
@@ -382,18 +409,9 @@ export async function generateClientReport(
   win.document.close();
 
   const doPrint = () => {
-    if (!win.closed) {
-      win.focus();
-      win.print();
-      win.onafterprint = () => win.close();
-    }
+    if (!win.closed) { win.focus(); win.print(); win.onafterprint = () => win.close(); }
   };
 
-  // Wait for fonts + layout
-  if (win.document.readyState === "complete") {
-    setTimeout(doPrint, 800);
-  } else {
-    win.addEventListener("load", () => setTimeout(doPrint, 600));
-    setTimeout(doPrint, 2500); // fallback
-  }
+  if (win.document.readyState === "complete") { setTimeout(doPrint, 700); }
+  else { win.addEventListener("load", () => setTimeout(doPrint, 600)); setTimeout(doPrint, 2500); }
 }
