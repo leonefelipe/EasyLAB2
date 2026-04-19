@@ -737,8 +737,6 @@ export const resumeRouter = router({
     .mutation(async ({ input }) => {
       const { resumeText, jobUrl } = input;
 
-       const { resumeText, jobUrl } = input;
-
       // ── Vaga é opcional — modo genérico quando não fornecida ─────────────────
       const hasJob = jobUrl.trim().length >= 10;
 
