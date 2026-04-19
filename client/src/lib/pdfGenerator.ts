@@ -1,21 +1,19 @@
 /**
  * pdfGenerator.ts
- * Client-side resume PDF generator — jsPDF + html2canvas.
- * Runs in the browser. Zero watermarks. ATS-friendly.
+ * Gerador de PDF client-side usando jsPDF + html2canvas.
+ * Roda no browser. Zero watermarks. Layout profissional.
  *
- * Called by AnalysisLayout.tsx:
+ * Chamado por AnalysisLayout.tsx:
  *   generateResumePDF(resumeText: string, lang: "pt" | "en"): Promise<void>
  */
 
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// ─── Section detection ────────────────────────────────────────────────────────
-
 const SECTIONS_PT = [
   "RESUMO PROFISSIONAL", "COMPETÊNCIAS PRINCIPAIS", "COMPETENCIAS PRINCIPAIS",
   "EXPERIÊNCIA PROFISSIONAL", "EXPERIENCIA PROFISSIONAL",
-  "FORMAÇÃO ACADÊMICA", "FORMACAO ACADEMICA", "FORMAÇÃO ACADÊMICA",
+  "FORMAÇÃO ACADÊMICA", "FORMACAO ACADEMICA",
   "IDIOMAS", "CERTIFICAÇÕES", "CERTIFICACOES", "HABILIDADES",
   "CURSOS", "INFORMAÇÕES ADICIONAIS", "INFORMACOES ADICIONAIS",
   "PUBLICAÇÕES", "PUBLICACOES", "VOLUNTARIADO", "PROJETOS",
@@ -37,11 +35,9 @@ function isSection(line: string, lang: "pt" | "en"): boolean {
 function isSubSection(line: string, lang: "pt" | "en"): boolean {
   const t = line.trim();
   return (
-    t.length > 2 &&
-    t.length < 60 &&
+    t.length > 2 && t.length < 60 &&
     t === t.toUpperCase() &&
-    !t.startsWith("-") &&
-    !t.startsWith("•") &&
+    !t.startsWith("-") && !t.startsWith("•") &&
     !/^\d/.test(t) &&
     !isSection(t, lang)
   );
@@ -53,116 +49,211 @@ function isBullet(line: string): boolean {
 
 function isContact(line: string): boolean {
   return (
-    line.includes("|") ||
-    line.includes("@") ||
-    line.includes("+55") ||
-    line.toLowerCase().includes("linkedin")
+    line.includes("|") || line.includes("@") ||
+    line.includes("+55") || line.toLowerCase().includes("linkedin")
   );
 }
 
-// ─── HTML builder ─────────────────────────────────────────────────────────────
+function esc(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 function buildHTML(resumeText: string, lang: "pt" | "en"): string {
   const lines = resumeText.split("\n");
-  let body = "";
-  let inSection = false;
-  let bulletOpen = false;
+  let headerHtml = "";
+  let sectionsHtml = "";
+  let currentSection = "";
+
   let nameDone = false;
   let titleDone = false;
   let contactDone = false;
+  let inSection = false;
+  let bulletOpen = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
     if (!line) {
-      if (bulletOpen) { body += `</ul>`; bulletOpen = false; }
+      if (bulletOpen) {
+        if (inSection) currentSection += `</ul>`;
+        bulletOpen = false;
+      }
       continue;
     }
 
-    if (!nameDone && i === 0) {
-      body += `<div class="r-name">${line}</div>`;
+    if (!nameDone) {
+      headerHtml += `<div class="r-name">${esc(line)}</div>`;
       nameDone = true;
       continue;
     }
 
-    if (!titleDone && i === 1 && !isSection(line, lang)) {
-      body += `<div class="r-role">${line}</div>`;
+    if (!titleDone && !isSection(line, lang)) {
+      headerHtml += `<div class="r-title">${esc(line)}</div>`;
       titleDone = true;
       continue;
     }
 
-    if (!contactDone && (i === 2 || isContact(line)) && !isSection(line, lang)) {
-      body += `<div class="r-contact">${line}</div>`;
-      if (i === 2) contactDone = true;
+    if (!contactDone && (i <= 3 || isContact(line)) && !isSection(line, lang)) {
+      headerHtml += `<div class="r-contact">${esc(line)}</div>`;
+      contactDone = true;
       continue;
     }
 
     if (isSection(line, lang)) {
-      if (bulletOpen) { body += `</ul>`; bulletOpen = false; }
-      if (inSection) body += `</div>`;
-      body += `<div class="sec"><div class="sec-h"><span>${line}</span><hr/></div><div class="sec-b">`;
+      if (bulletOpen) { currentSection += `</ul>`; bulletOpen = false; }
+      if (inSection) { sectionsHtml += currentSection + `</div></div>`; }
+      currentSection = `<div class="sec"><div class="sec-hdr"><span>${esc(line)}</span></div><div class="sec-body">`;
       inSection = true;
       continue;
     }
 
     if (isSubSection(line, lang)) {
-      if (bulletOpen) { body += `</ul>`; bulletOpen = false; }
-      body += `<div class="sub">${line}</div>`;
+      if (bulletOpen) { currentSection += `</ul>`; bulletOpen = false; }
+      currentSection += `<div class="sub">${esc(line)}</div>`;
       continue;
     }
 
     if (isBullet(line)) {
-      const txt = line.replace(/^[-•*▪·]\s+/, "");
-      if (!bulletOpen) { body += `<ul>`; bulletOpen = true; }
-      body += `<li>${txt}</li>`;
+      const txt = esc(line.replace(/^[-•*▪·]\s+/, ""));
+      if (!bulletOpen) { currentSection += `<ul>`; bulletOpen = true; }
+      currentSection += `<li>${txt}</li>`;
       continue;
     }
 
-    if (bulletOpen) { body += `</ul>`; bulletOpen = false; }
+    if (bulletOpen) { currentSection += `</ul>`; bulletOpen = false; }
 
-    if (line.includes(" | ") || line.includes(" – ") || /\w[\s]*[-–][\s]*\w/.test(line)) {
-      body += `<div class="jline">${line}</div>`;
+    if (line.includes(" | ") || line.includes(" – ") || line.includes(" - ")) {
+      currentSection += `<div class="job-line">${esc(line)}</div>`;
     } else {
-      body += `<p>${line}</p>`;
+      currentSection += `<p>${esc(line)}</p>`;
     }
   }
 
-  if (bulletOpen) body += `</ul>`;
-  if (inSection) body += `</div></div>`;
-
-  const parts = body.split(`<div class="sec">`);
-  const hdr = parts[0];
-  const secs = parts.slice(1).map(s => `<div class="sec">${s}`).join("");
+  if (bulletOpen && currentSection) currentSection += `</ul>`;
+  if (inSection) sectionsHtml += currentSection + `</div></div>`;
 
   return `<!DOCTYPE html>
 <html lang="${lang}">
-<head><meta charset="UTF-8">
+<head>
+<meta charset="UTF-8">
 <style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;font-size:10.5pt;line-height:1.5;color:#111;background:#fff;width:794px;padding:50px 60px}
-.r-hdr{border-bottom:1.8px solid #111;padding-bottom:9px;margin-bottom:13px}
-.r-name{font-size:21pt;font-weight:700;color:#111;line-height:1.15;margin-bottom:3px;letter-spacing:-0.2px}
-.r-role{font-size:11pt;font-weight:500;color:#333;margin-bottom:5px}
-.r-contact{font-size:9pt;color:#555}
-.sec{margin-bottom:12px}
-.sec-h{display:flex;align-items:center;gap:7px;margin-bottom:7px}
-.sec-h span{font-size:9pt;font-weight:700;text-transform:uppercase;letter-spacing:1.1px;color:#111;white-space:nowrap}
-.sec-h hr{flex:1;border:none;border-top:1px solid #111;margin:0}
-.sub{font-size:10.5pt;font-weight:600;color:#111;margin:7px 0 2px}
-.jline{font-size:10pt;font-weight:600;color:#222;margin:5px 0 3px}
-ul{list-style:none;margin:2px 0 5px;padding:0}
-li{font-size:10pt;color:#333;padding-left:13px;position:relative;margin-bottom:2px;line-height:1.45}
-li::before{content:"•";position:absolute;left:0;color:#111;font-weight:700}
-p{font-size:10pt;color:#333;margin-bottom:3px;text-align:justify}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.5;
+  color: #111;
+  background: #fff;
+  width: 794px;
+  padding: 48px 60px;
+}
+
+.r-hdr {
+  border-bottom: 1.5px solid #111;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+}
+.r-name {
+  font-size: 22pt;
+  font-weight: 700;
+  color: #111;
+  line-height: 1.15;
+  margin-bottom: 3px;
+  letter-spacing: -0.3px;
+}
+.r-title {
+  font-size: 11pt;
+  font-weight: 400;
+  color: #333;
+  margin-bottom: 5px;
+}
+.r-contact {
+  font-size: 9pt;
+  color: #555;
+  font-weight: 400;
+}
+
+.sec { margin-bottom: 13px; }
+
+.sec-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.sec-hdr span {
+  font-size: 9pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.3px;
+  color: #111;
+  white-space: nowrap;
+}
+.sec-hdr::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #111;
+  display: block;
+}
+
+.sec-body { padding: 0; }
+
+.sub {
+  font-size: 10.5pt;
+  font-weight: 700;
+  color: #111;
+  margin: 7px 0 2px;
+}
+.job-line {
+  font-size: 10pt;
+  font-weight: 600;
+  color: #222;
+  margin: 5px 0 3px;
+}
+
+ul {
+  list-style: none;
+  margin: 3px 0 6px 0;
+  padding: 0;
+}
+li {
+  font-size: 10pt;
+  color: #333;
+  padding-left: 14px;
+  position: relative;
+  margin-bottom: 2px;
+  line-height: 1.45;
+  font-weight: 400;
+}
+li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: #111;
+  font-weight: 700;
+}
+
+p {
+  font-size: 10pt;
+  color: #333;
+  margin-bottom: 3px;
+  text-align: justify;
+  font-weight: 400;
+}
 </style>
 </head>
 <body>
-<div class="r-hdr">${hdr}</div>
-${secs}
-</body></html>`;
+<div class="r-hdr">${headerHtml}</div>
+${sectionsHtml}
+</body>
+</html>`;
 }
-
-// ─── Public export ────────────────────────────────────────────────────────────
 
 export async function generateResumePDF(
   resumeText: string,
@@ -180,7 +271,7 @@ export async function generateResumePDF(
   doc.write(html);
   doc.close();
 
-  await new Promise(r => setTimeout(r, 700));
+  await new Promise(r => setTimeout(r, 800));
 
   try {
     const canvas = await html2canvas(doc.body, {
@@ -191,26 +282,33 @@ export async function generateResumePDF(
       logging: false,
     });
 
-    const PDF_W_MM = 210;
-    const PDF_H_MM = 297;
-    const pxPerMm = canvas.width / PDF_W_MM;
-    const pageHeightPx = PDF_H_MM * pxPerMm;
-    const totalPages = Math.ceil(canvas.height / pageHeightPx);
+    const PDF_W = 210;
+    const PDF_H = 297;
+    const pxPerMm = canvas.width / PDF_W;
+    const pageH = PDF_H * pxPerMm;
+    const pages = Math.ceil(canvas.height / pageH);
 
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
-    for (let p = 0; p < totalPages; p++) {
+    for (let p = 0; p < pages; p++) {
       if (p > 0) pdf.addPage();
-      const srcY = p * pageHeightPx;
-      const sliceH = Math.min(pageHeightPx, canvas.height - srcY);
+      const srcY = p * pageH;
+      const sliceH = Math.min(pageH, canvas.height - srcY);
       const slice = document.createElement("canvas");
       slice.width = canvas.width;
       slice.height = sliceH;
-      slice.getContext("2d")!.drawImage(canvas, 0, srcY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
-      pdf.addImage(slice.toDataURL("image/png"), "PNG", 0, 0, PDF_W_MM, sliceH / pxPerMm, undefined, "FAST");
+      slice.getContext("2d")!.drawImage(
+        canvas, 0, srcY, canvas.width, sliceH, 0, 0, canvas.width, sliceH
+      );
+      pdf.addImage(
+        slice.toDataURL("image/png"), "PNG",
+        0, 0, PDF_W, sliceH / pxPerMm,
+        undefined, "FAST"
+      );
     }
 
-    pdf.save(lang === "en" ? "Resume_Optimized.pdf" : "Curriculo_Otimizado.pdf");
+    const filename = lang === "en" ? "Resume_Optimized.pdf" : "Curriculo_Otimizado.pdf";
+    pdf.save(filename);
   } finally {
     document.body.removeChild(iframe);
   }
