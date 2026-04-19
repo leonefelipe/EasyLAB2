@@ -42,6 +42,13 @@ export interface AnalysisResult {
   recruiterInsights?: string[]; seniorityLevel?: string; careerTrajectory?: string;
   formattingIssues?: string[]; competitiveEdges?: string[]; competitiveRisks?: string[];
   salaryRange?: SalaryRange; negotiationTips?: string[];
+  linkedinOptimization?: {
+    headline: string;
+    about: string;
+    featuredSection: string;
+    skillsToAdd: string[];
+    profileTips: string[];
+  };
   recruiterProfile?: { companyType: string; cultureSignals: string; recruiterFears: string[]; recruiterTriggers: string[]; idealNarrative: string };
 }
 
