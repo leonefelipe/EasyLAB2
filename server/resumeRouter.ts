@@ -731,15 +731,20 @@ export const resumeRouter = router({
     .input(
       z.object({
         resumeText: z.string().min(50, "Currículo muito curto"),
-        jobUrl: z.string().min(10, "Informe o link ou descrição da vaga"),
+        jobUrl: z.string().optional().default(""),
       })
     )
     .mutation(async ({ input }) => {
       const { resumeText, jobUrl } = input;
 
-      let jobContent = jobUrl.trim();
+       const { resumeText, jobUrl } = input;
+
+      // ── Vaga é opcional — modo genérico quando não fornecida ─────────────────
+      const hasJob = jobUrl.trim().length >= 10;
+
+      let jobContent = hasJob ? jobUrl.trim() : "GENERIC_ANALYSIS";
       let scrapedSuccessfully = false;
-      const isLinkedIn = isUrl(jobUrl.trim()) && new URL(jobUrl.trim()).hostname.includes("linkedin.com");
+      const isLinkedIn = hasJob && isUrl(jobUrl.trim()) && new URL(jobUrl.trim()).hostname.includes("linkedin.com");
 
       // LinkedIn blocks all server-side scraping — fail fast with a clear user-facing error
       if (isLinkedIn) {
@@ -748,7 +753,7 @@ export const resumeRouter = router({
         );
       }
 
-      if (isUrl(jobUrl.trim())) {
+      if (hasJob && isUrl(jobUrl.trim())) {
         const scraped = await scrapeJobUrl(jobUrl.trim());
         if (scraped && scraped.length > 200) {
           jobContent = scraped;
@@ -759,25 +764,30 @@ export const resumeRouter = router({
       // ── Pre-compute ATS score for LLM calibration ────────────────────────────
       let atsAnchorContext = "";
       try {
-        const atsResult = calculateATSScore({ cvText: resumeText, jobText: jobContent });
+        const atsResult = calculateATSScore({ cvText: resumeText, jobText: hasJob ? jobContent : resumeText });
         atsAnchorContext = "\n\n" + atsResultToPromptContext(atsResult);
       } catch {
         // non-critical — proceed without anchor
       }
 
-      const jobContext = scrapedSuccessfully
-        ? "(content automatically extracted from the job site)"
-        : isUrl(jobUrl.trim())
-          ? "(URL provided — content could not be extracted; analyze based on URL signals and ask candidate to paste full description for best results)"
-          : "(job description provided by candidate)";
+      const jobContext = !hasJob
+        ? "(GENERIC ANALYSIS — no job description provided; evaluate the resume on its own merits: ATS readiness, structure, bullet quality, keyword density, and market competitiveness for the candidate's apparent target role)"
+        : scrapedSuccessfully
+          ? "(content automatically extracted from the job site)"
+          : isUrl(jobUrl.trim())
+            ? "(URL provided — content could not be extracted; analyze based on URL signals and ask candidate to paste full description for best results)"
+            : "(job description provided by candidate)";
+
+      const jobSection = hasJob
+        ? `JOB DESCRIPTION ${jobContext}:\n${jobContent}`
+        : `ANALYSIS MODE: Generic resume quality analysis.\n${jobContext}\nEvaluate structure, impact, ATS readiness, and overall market positioning. Set matchScore based on general quality. missingKeywords should list common keywords missing from the candidate's apparent professional field.`;
 
       const userMessage = `CANDIDATE'S ORIGINAL RESUME (preserve ALL data exactly as-is — dates, companies, titles are sacred):
 ${resumeText}
 
 ---
 
-JOB DESCRIPTION ${jobContext}:
-${jobContent}
+${jobSection}
 
 ---
 
