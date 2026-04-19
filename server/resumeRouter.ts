@@ -70,6 +70,15 @@ const AnalysisResultSchema = z.object({
   }),
   negotiationTips: z.array(z.string()),
 
+  // ── NEW: LinkedIn Optimization ────────────────────────────────────────────
+  linkedinOptimization: z.object({
+    headline: z.string(),
+    about: z.string(),
+    featuredSection: z.string(),
+    skillsToAdd: z.array(z.string()),
+    profileTips: z.array(z.string()),
+  }),
+
   // ── NEW: Recruiter Psychological Profile ──────────────────────────────────
   recruiterProfile: z.object({
     companyType: z.string(),
@@ -333,6 +342,19 @@ const ANALYSIS_JSON_SCHEMA = {
       additionalProperties: false,
     },
     negotiationTips: { type: "array", items: { type: "string" } },
+    // LinkedIn Optimization
+    linkedinOptimization: {
+      type: "object",
+      properties: {
+        headline: { type: "string" },
+        about: { type: "string" },
+        featuredSection: { type: "string" },
+        skillsToAdd: { type: "array", items: { type: "string" } },
+        profileTips: { type: "array", items: { type: "string" } },
+      },
+      required: ["headline", "about", "featuredSection", "skillsToAdd", "profileTips"],
+      additionalProperties: false,
+    },
     // Recruiter Psychological Profile
     recruiterProfile: {
       type: "object",
@@ -356,6 +378,7 @@ const ANALYSIS_JSON_SCHEMA = {
     "seniorityLevel", "careerTrajectory", "formattingIssues",
     "competitiveEdges", "competitiveRisks",
     "salaryRange", "negotiationTips",
+    "linkedinOptimization",
     "recruiterProfile",
   ],
   additionalProperties: false,
@@ -587,6 +610,91 @@ WHAT THIS RECRUITER FINDS IRRESISTIBLE:
 Output: recruiterProfile object with { companyType, cultureSignals, recruiterFears, recruiterTriggers, idealNarrative }
 
 ════════════════════════════════════════════════════════════
+  LAYER 6 — LINKEDIN PROFILE OPTIMIZATION
+════════════════════════════════════════════════════════════
+
+Generate a complete LinkedIn optimization plan for this candidate based on their resume and target role.
+
+LINKEDIN HEADLINE (max 220 characters):
+- Must be keyword-rich and describe VALUE, not just job title
+- Formula: [Seniority] + [Function] + [Differentiator] + [Impact/Result]
+- Example: "Headhunter Sênior | Talent Acquisition & Executive Search | +18 anos em Recrutamento B2B | Robert Half"
+- Avoid generic titles like "Profissional em busca de oportunidade"
+
+LINKEDIN ABOUT / RESUMO (max 2600 characters):
+- First 2 lines MUST capture attention (they show before "Ver mais")
+- Structure: Hook → Career narrative → Key achievements with numbers → What you bring → CTA
+- Written in first person, professional but personable
+- Include 3-5 strategic keywords for LinkedIn SEO
+- End with a soft call to action
+
+FEATURED SECTION:
+- Suggest what to pin: achievements, media mentions, specific projects, articles
+- Be specific to this candidate's background
+
+SKILLS TO ADD:
+- List 10-15 LinkedIn skills to add/prioritize for endorsements
+- Mix of hard skills, soft skills, and tools relevant to the target role
+- Priority order: most searched first
+
+PROFILE TIPS:
+- 4-5 specific, actionable tips for this candidate's profile
+- Cover: profile photo, banner, URL customization, recommendations strategy, content strategy
+
+Output: linkedinOptimization object with { headline, about, featuredSection, skillsToAdd (array), profileTips (array) }
+All content in Brazilian Portuguese.
+
+════════════════════════════════════════════════════════════
+  SALARY CALIBRATION — REAL BRAZILIAN MARKET DATA 2024-2025
+════════════════════════════════════════════════════════════
+
+Use these REAL benchmarks from Robert Half Guia Salarial, Glassdoor BR, LinkedIn Salary BR, e Catho:
+
+RECRUTAMENTO & TALENT ACQUISITION (São Paulo):
+- Analista de RH/Recrutamento Pleno: R$4.500-R$7.000 CLT | R$7.000-R$11.000 PJ
+- Especialista Talent Acquisition Sênior: R$8.000-R$14.000 CLT | R$12.000-R$20.000 PJ
+- Headhunter / Executive Search Sênior: R$10.000-R$18.000 CLT + bônus | R$15.000-R$25.000 PJ
+- Gerente de RH/TA: R$15.000-R$25.000 CLT | R$22.000-R$35.000 PJ
+
+COMERCIAL B2B / BUSINESS DEVELOPMENT:
+- SDR / BDR: R$3.500-R$5.500 CLT + comissão | R$5.500-R$8.500 PJ
+- Account Executive Pleno: R$6.000-R$10.000 CLT + comissão | R$9.000-R$15.000 PJ
+- Account Executive Sênior: R$10.000-R$16.000 CLT + comissão | R$15.000-R$24.000 PJ
+- Gerente Comercial: R$14.000-R$22.000 CLT | R$20.000-R$32.000 PJ
+- Diretor Comercial: R$22.000-R$40.000 CLT | R$30.000-R$55.000 PJ
+
+VENDAS B2B SaaS / TECH:
+- AE SaaS Pleno: R$7.000-R$12.000 CLT + OTE 2x | R$10.000-R$18.000 PJ
+- AE SaaS Sênior: R$12.000-R$20.000 CLT + OTE 2x | R$18.000-R$28.000 PJ
+- Head of Sales: R$20.000-R$35.000 CLT | R$28.000-R$48.000 PJ
+
+KEY MARKET FACTS:
+- PJ multiplier in BR: 1.35-1.50x over CLT gross (to cover INSS, IR, benefits)
+- São Paulo commands 20-35% premium over other cities
+- Senior professionals with 10+ years: top-of-range positioning justified
+- Robert Half, Randstad, Michael Page consultants: typically R$8.000-R$18.000 CLT depending on seniority
+- Remote work commands similar pay as SP in most cases
+
+CALIBRATION RULE: When seniority is high (10+ years) and the candidate has measurable results, ALWAYS position at the TOP THIRD of the range, not the middle. A headhunter with 18 years and Robert Half experience should NEVER be placed at the bottom of the range.
+
+════════════════════════════════════════════════════════════
+  MULTI-CAREER ANALYSIS — HYBRID PROFESSIONALS
+════════════════════════════════════════════════════════════
+
+CRITICAL: Many candidates have DUAL or MULTI-area careers. NEVER reduce analysis to only the most recent job title.
+
+When you detect a candidate with experience in multiple distinct areas (e.g., Sales + Recruiting, Tech + Management, Finance + Commercial):
+1. Analyze the ENTIRE career trajectory holistically
+2. Identify ALL transferable skills across areas
+3. The "targetPositions" field in the request defines what the candidate WANTS — prioritize that
+4. Even in generic analysis, list keywords and strengths from ALL career phases
+5. The competitive edge is often PRECISELY the cross-functional experience
+6. Salary: hybrid profiles often command PREMIUM — both markets value the cross-over
+7. The optimized resume must position the hybrid experience as a STRENGTH, not confusion
+
+Example: A professional with 18 years combining Sales B2B + Talent Acquisition is NOT "just a recruiter" — they are a rare profile who understands both buyer and seller psychology, extremely valuable for companies needing Business Development combined with Talent strategy.
+
+════════════════════════════════════════════════════════════
   ABSOLUTE LAW — NEVER VIOLATE UNDER ANY CIRCUMSTANCE
 ════════════════════════════════════════════════════════════
 
@@ -732,10 +840,11 @@ export const resumeRouter = router({
       z.object({
         resumeText: z.string().min(50, "Currículo muito curto"),
         jobUrl: z.string().optional().default(""),
+        targetPositions: z.string().optional().default(""),
       })
     )
     .mutation(async ({ input }) => {
-      const { resumeText, jobUrl } = input;
+      const { resumeText, jobUrl, targetPositions } = input;
 
       // ── Vaga é opcional — modo genérico quando não fornecida ─────────────────
       const hasJob = jobUrl.trim().length >= 10;
@@ -768,6 +877,8 @@ export const resumeRouter = router({
         // non-critical — proceed without anchor
       }
 
+      const hasTargetPositions = targetPositions.trim().length > 0;
+
       const jobContext = !hasJob
         ? "(GENERIC ANALYSIS — no job description provided; evaluate the resume on its own merits: ATS readiness, structure, bullet quality, keyword density, and market competitiveness for the candidate's apparent target role)"
         : scrapedSuccessfully
@@ -776,9 +887,13 @@ export const resumeRouter = router({
             ? "(URL provided — content could not be extracted; analyze based on URL signals and ask candidate to paste full description for best results)"
             : "(job description provided by candidate)";
 
+      const targetContext = hasTargetPositions
+        ? `\n\nTARGET POSITIONS (defined by consultant — THIS IS THE PRIMARY ANALYSIS FOCUS):\n${targetPositions.trim()}\nCRITICAL: Optimize the resume specifically for these target positions. The entire analysis — keywords, gaps, competitive intelligence, salary — must be calibrated to these targets. This overrides any assumption about the candidate's "current role" as the target.`
+        : "";
+
       const jobSection = hasJob
-        ? `JOB DESCRIPTION ${jobContext}:\n${jobContent}`
-        : `ANALYSIS MODE: Generic resume quality analysis.\n${jobContext}\nEvaluate structure, impact, ATS readiness, and overall market positioning. Set matchScore based on general quality. missingKeywords should list common keywords missing from the candidate's apparent professional field.`;
+        ? `JOB DESCRIPTION ${jobContext}:\n${jobContent}${targetContext}`
+        : `ANALYSIS MODE: Generic resume quality analysis.\n${jobContext}\nEvaluate structure, impact, ATS readiness, and overall market positioning for ALL career areas present in the resume — do NOT focus only on the most recent role.\nmissingKeywords should list common keywords missing for the candidate's professional fields.${targetContext}`;
 
       const userMessage = `CANDIDATE'S ORIGINAL RESUME (preserve ALL data exactly as-is — dates, companies, titles are sacred):
 ${resumeText}
@@ -791,20 +906,22 @@ ${jobSection}
 
 ANALYSIS INSTRUCTIONS:
 
-Execute your FOUR-LAYER analysis (ATS + Human Recruiter + Competitive Intelligence + Salary/Negotiation).
+Execute your SIX-LAYER analysis (ATS + Human Recruiter + Competitive Intelligence + Salary/Negotiation + LinkedIn + Multi-Career).
 
 1. Score the resume BEFORE optimization (matchScore = sum of scoreBreakdown components)
 2. Calculate elite atsScore = DIRECT SUM of all six atsScoreBreakdown components
 3. Identify ALL 15 Career Killers that apply to this specific resume
 4. Generate the optimized resume maintaining IDENTICAL factual data (dates, companies, titles)
 5. For improvedBullets: identify 3-5 weak bullets from the original and show STAR-method transformations
-6. List missingKeywords: exact terms from JD not present in resume
+6. List missingKeywords: exact terms from JD/target not present in resume
 7. projectedMatchScore MUST be >= matchScore (optimization can only improve, never worsen)
 8. COMPETITIVE INTELLIGENCE: analyze this candidate vs. the typical applicant pool for this role
-9. SALARY INTELLIGENCE: estimate realistic CLT and PJ ranges for Brazilian market based on role + seniority
+9. SALARY INTELLIGENCE: use real Brazilian market benchmarks — position senior candidates (10+ years) at TOP of range
 10. RECRUITER PROFILE: decode what the hiring manager fears and what triggers an immediate call
-11. Be rigorously honest — if compatibility is low, say so and explain the gap
-12. All text in Brazilian Portuguese except internationally adopted English terms
+11. LINKEDIN OPTIMIZATION: generate complete headline, About section, featured section, skills, and profile tips
+12. MULTI-CAREER: if candidate has experience in multiple areas, analyze ALL areas — do NOT reduce to only the most recent role
+13. Be rigorously honest — if compatibility is low, say so and explain the gap
+14. All text in Brazilian Portuguese except internationally adopted English terms
 
 Return ONLY valid JSON. No markdown, no text outside JSON.
 
@@ -882,6 +999,14 @@ JSON structure:
   "negotiationTips": [
     "<2-3 specific, actionable salary negotiation tips tailored to THIS candidate's strengths and gaps>"
   ],
+
+  "linkedinOptimization": {
+    "headline": "<Optimized LinkedIn headline — max 220 chars — keyword-rich, value-focused, in Portuguese>",
+    "about": "<Full LinkedIn About section — max 2600 chars — first-person, hook + narrative + achievements + CTA — in Portuguese>",
+    "featuredSection": "<Specific recommendation for what to pin in Featured section — based on this candidate's background>",
+    "skillsToAdd": ["<10-15 LinkedIn skills in priority order — most searched first>"],
+    "profileTips": ["<4-5 specific, actionable tips for THIS candidate's LinkedIn profile — photo, banner, URL, recommendations, content>"]
+  },
 
   "recruiterProfile": {
     "companyType": "<startup | scale-up | corporativo | tradicional | consultoria | agência>",
