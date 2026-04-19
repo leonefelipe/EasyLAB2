@@ -2,9 +2,6 @@
  * AnalysisLayout.tsx
  * Split-panel layout: left=inputs, right=results with tabs.
  * Place at: client/src/components/AnalysisLayout.tsx
- *
- * Usage in Home.tsx — replace the main content <div> with:
- *   <AnalysisLayout ... />
  */
 
 import { useState, useRef, useEffect } from "react";
@@ -25,7 +22,7 @@ import { extractTextFromFile } from "@/lib/fileExtractor";
 import { generateResumePDF } from "@/lib/pdfGenerator";
 import { generateClientReport } from "@/lib/clientReportGenerator";
 
-// ─── Types (mirrors resumeRouter output) ─────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ScoreBreakdown { technicalSkills: number; experience: number; keywords: number; tools: number; seniority: number }
 interface AtsBreakdown { parsing: number; keywordMatch: number; experienceQuality: number; impactMetrics: number; formatting: number; skillsAlignment: number }
@@ -74,22 +71,6 @@ function ScoreRing({ score, size = 100, color }: { score: number; size?: number;
         strokeDasharray={`${(score / 100) * circ} ${circ}`}
         style={{ transition: "stroke-dasharray 1s ease" }} />
     </svg>
-  );
-}
-
-function ScoreCard({ label, score, max = 100, color }: { label: string; score: number; max?: number; color: string }) {
-  const pct = Math.round((score / max) * 100);
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <div className="relative w-20 h-20">
-        <ScoreRing score={pct} size={80} color={color} />
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-xl font-black text-slate-900">{score}</span>
-          <span className="text-[10px] text-slate-400">/{max}</span>
-        </div>
-      </div>
-      <span className="text-xs font-medium text-slate-600 text-center leading-tight">{label}</span>
-    </div>
   );
 }
 
@@ -143,22 +124,15 @@ function ResumeText({ text }: { text: string }) {
   );
 }
 
-// ─── Tab IDs ──────────────────────────────────────────────────────────────────
-
 type Tab = "overview" | "ats" | "salary" | "improvements" | "cv";
 
-// ─── Props ───────────────────────────────────────────────────────────────────
-
-interface Props {
-  isDarkMode: boolean;
-}
+interface Props { isDarkMode: boolean; }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function AnalysisLayout({ isDarkMode }: Props) {
   const dk = isDarkMode;
 
-  // Inputs
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [resumeText, setResumeText] = useState("");
   const [jobInput, setJobInput] = useState("");
@@ -166,11 +140,8 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
   const [fetchedJobText, setFetchedJobText] = useState("");
   const [isExtracting, setIsExtracting] = useState(false);
   const [savedCV, setSavedCV] = useState<SavedCV | null>(null);
-
-  // ── NOVO: Nome do cliente ──────────────────────────────────────────────────
   const [clientName, setClientName] = useState("");
 
-  // Results
   const [results, setResults] = useState<AnalysisResult | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [translatedResume, setTranslatedResume] = useState<string | null>(null);
@@ -182,22 +153,16 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resultsPanelRef = useRef<HTMLDivElement>(null);
 
-  // Load saved CV
   useEffect(() => {
     const cv = loadCV();
     if (cv) { setSavedCV(cv); }
   }, []);
 
-  // Debounced URL detection
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const trimmed = jobInput.trim();
     if (!trimmed || !trimmed.startsWith("http") || trimmed.includes(" ")) return;
-
-    debounceRef.current = setTimeout(() => {
-      handleFetchJob(trimmed);
-    }, 600);
-
+    debounceRef.current = setTimeout(() => { handleFetchJob(trimmed); }, 600);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [jobInput]);
 
@@ -258,7 +223,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
     onError: () => { setIsSearchingJobs(false); toast.error("Erro ao buscar vagas."); },
   });
 
-  // Handlers
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -285,7 +249,7 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
   const isAnalyzing = analyzeMutation.isPending;
   const jobText = fetchedJobText || jobInput;
 
-  // ── TAB CONTENT ──────────────────────────────────────────────────────────────
+  // ── TABS ──────────────────────────────────────────────────────────────────────
 
   const renderOverview = () => {
     if (!results) return null;
@@ -294,7 +258,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
     const scoreColor = sc >= 75 ? "#10b981" : sc >= 55 ? "#f59e0b" : "#ef4444";
     return (
       <div className="space-y-4">
-        {/* Score header */}
         <div className="flex items-center gap-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
           <div className="relative w-24 h-24 flex-shrink-0">
             <ScoreRing score={sc} size={96} color={scoreColor} />
@@ -315,7 +278,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </div>
         </div>
 
-        {/* Score breakdown */}
         <Collapsible title="Detalhamento" icon={BarChart2} defaultOpen>
           <div className="space-y-2 pt-1">
             {([
@@ -337,7 +299,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </div>
         </Collapsible>
 
-        {/* Keywords */}
         <Collapsible title="Palavras-chave da vaga" icon={Star} badge={results.keywords.length}>
           <div className="flex flex-wrap gap-2 pt-1">
             {results.keywords.map((kw, i) => (
@@ -346,7 +307,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </div>
         </Collapsible>
 
-        {/* Gap analysis */}
         {results.gapAnalysis && results.gapAnalysis.length > 0 && (
           <Collapsible title="O que falta" icon={AlertTriangle} badge={results.gapAnalysis.length}>
             <ul className="space-y-2 pt-1">
@@ -359,7 +319,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </Collapsible>
         )}
 
-        {/* Suggestions */}
         <Collapsible title="Sugestões" icon={Lightbulb} badge={results.suggestions.length}>
           <ul className="space-y-2 pt-1">
             {results.suggestions.map((s, i) => (
@@ -370,7 +329,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </ul>
         </Collapsible>
 
-        {/* Cover letter */}
         {results.coverLetterPoints && results.coverLetterPoints.length > 0 && (
           <Collapsible title="Carta de Apresentação" icon={BookOpen} badge={results.coverLetterPoints.length}>
             <div className="space-y-2 pt-1">
@@ -383,7 +341,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </Collapsible>
         )}
 
-        {/* Job search */}
         {results.jobTitle && (
           <div className="pt-2">
             <Button onClick={() => {
@@ -429,7 +386,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
     if (!results) return null;
     return (
       <div className="space-y-4">
-        {/* ATS Score */}
         {results.atsScore !== undefined && results.atsScoreBreakdown && (
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
             <div className="flex items-center gap-4 mb-4">
@@ -471,7 +427,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </div>
         )}
 
-        {/* Formatting issues */}
         {results.formattingIssues && results.formattingIssues.length > 0 && (
           <Collapsible title="Problemas de formatação" icon={AlertTriangle} badge={results.formattingIssues.length} defaultOpen>
             <ul className="space-y-1.5 pt-1">
@@ -484,7 +439,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </Collapsible>
         )}
 
-        {/* Missing keywords */}
         {results.missingKeywords && results.missingKeywords.length > 0 && (
           <Collapsible title="Keywords faltando" icon={Search} badge={results.missingKeywords.length} defaultOpen>
             <div className="flex flex-wrap gap-2 pt-1">
@@ -495,7 +449,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </Collapsible>
         )}
 
-        {/* Strengths & weaknesses */}
         {(results.strengths?.length || results.weaknesses?.length) && (
           <div className="grid grid-cols-2 gap-3">
             {results.strengths && results.strengths.length > 0 && (
@@ -521,7 +474,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </div>
         )}
 
-        {/* Career trajectory */}
         {results.careerTrajectory && (
           <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
             <p className="text-[11px] font-bold text-blue-700 uppercase tracking-wide mb-1">Trajetória</p>
@@ -529,7 +481,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </div>
         )}
 
-        {/* Recruiter profile */}
         {results.recruiterProfile && (
           <Collapsible title="Perfil do Recrutador" icon={Eye}>
             <div className="space-y-3 pt-1">
@@ -612,7 +563,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
     if (!results) return null;
     return (
       <div className="space-y-4">
-        {/* Changes */}
         {results.changes.length > 0 && (
           <Collapsible title="O que foi alterado" icon={TrendingUp} badge={results.changes.length} defaultOpen>
             <div className="space-y-2 pt-1">
@@ -635,7 +585,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </Collapsible>
         )}
 
-        {/* Improved bullets */}
         {results.improvedBullets && results.improvedBullets.length > 0 && (
           <Collapsible title="Bullets reescritos" icon={Edit3} badge={results.improvedBullets.length} defaultOpen>
             <div className="space-y-3 pt-1">
@@ -656,7 +605,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </Collapsible>
         )}
 
-        {/* Competitive intelligence */}
         {(results.competitiveEdges?.length || results.competitiveRisks?.length) && (
           <Collapsible title="Inteligência Competitiva" icon={Star}>
             <div className="space-y-3 pt-1">
@@ -680,7 +628,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </Collapsible>
         )}
 
-        {/* Recruiter insights */}
         {results.recruiterInsights && results.recruiterInsights.length > 0 && (
           <Collapsible title="Visão do Recrutador" icon={Eye}>
             <ul className="space-y-1.5 pt-1">
@@ -715,7 +662,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
                 <Button size="sm" className="text-xs gap-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => { generateResumePDF(results.optimizedResume, "pt"); toast.success("PDF gerado!"); }}>
                   <Download className="w-3 h-3" />PDF CV
                 </Button>
-                {/* ── NOVO: Botão Relatório Cliente ── */}
                 <Button size="sm" className="text-xs gap-1 bg-blue-700 hover:bg-blue-800 text-white" onClick={() => {
                   generateClientReport(results, clientName || "Cliente");
                   toast.success("Relatório gerado!");
@@ -749,7 +695,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           </div>
         )}
 
-        {/* English version */}
         {translatedResume && !isEditing && (
           <div className="space-y-2 border-t border-slate-200 pt-3 mt-3">
             <div className="flex items-center justify-between">
@@ -772,7 +717,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
     );
   };
 
-  // ── SKELETON ──────────────────────────────────────────────────────────────────
   const Skeleton = () => (
     <div className="space-y-3 animate-pulse">
       <div className="flex items-center gap-4 p-4 bg-slate-100 rounded-xl">
@@ -795,12 +739,10 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
     { id: "cv", label: "CV", icon: FileText },
   ];
 
-  // ─────────────────────────────────────────────────────────────────────────────
-
   return (
     <div className="flex flex-col lg:flex-row gap-0 min-h-screen">
 
-      {/* ── LEFT PANEL — Inputs ───────────────────────────────────────────────── */}
+      {/* ── LEFT PANEL ── */}
       <div className={`lg:w-96 lg:flex-shrink-0 lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] lg:overflow-y-auto border-r ${dk ? "bg-slate-900 border-slate-700" : "bg-white border-slate-200"}`}>
         <div className="p-5 space-y-5">
           <div>
@@ -808,7 +750,7 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
             <p className={`text-xs mt-0.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>Upload + vaga → análise ATS completa</p>
           </div>
 
-          {/* ── NOVO: Nome do cliente ── */}
+          {/* Nome do cliente */}
           <div>
             <label className={`text-xs font-semibold uppercase tracking-wide mb-1.5 flex items-center gap-1.5 ${dk ? "text-slate-400" : "text-slate-500"}`}>
               <User className="w-3 h-3" />Nome do cliente
@@ -826,7 +768,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
             />
           </div>
 
-          {/* Saved CV banner */}
           {savedCV && !resumeText && (
             <div className={`p-3 rounded-lg border ${dk ? "bg-slate-800 border-slate-600" : "bg-blue-50 border-blue-200"}`}>
               <p className={`text-xs font-semibold mb-1 ${dk ? "text-white" : "text-slate-900"}`}>Currículo salvo</p>
@@ -868,7 +809,7 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
             </label>
           </div>
 
-          {/* Job input */}
+          {/* Vaga */}
           <div>
             <label className={`text-xs font-semibold uppercase tracking-wide mb-1.5 block ${dk ? "text-slate-400" : "text-slate-500"}`}>
               Vaga
@@ -887,8 +828,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
                 </button>
               )}
             </div>
-
-            {/* URL fetch status */}
             {jobFetchState === "loading" && (
               <div className="flex items-center gap-1.5 mt-1.5 text-xs text-blue-600">
                 <Loader2 className="w-3 h-3 animate-spin" />Buscando vaga...
@@ -913,7 +852,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
             )}
           </div>
 
-          {/* Analyze button */}
           <Button
             onClick={handleAnalyze}
             disabled={isAnalyzing || !resumeText || !jobText.trim()}
@@ -926,7 +864,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
             ) : "Analisar Vaga"}
           </Button>
 
-          {/* Progress bar */}
           {isAnalyzing && (
             <div className="w-full h-1 bg-slate-200 rounded-full overflow-hidden">
               <div className="h-full bg-blue-500 rounded-full animate-pulse" style={{ width: "60%" }} />
@@ -944,7 +881,7 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
         </div>
       </div>
 
-      {/* ── RIGHT PANEL — Results ─────────────────────────────────────────────── */}
+      {/* ── RIGHT PANEL ── */}
       <div ref={resultsPanelRef} className={`flex-1 ${dk ? "bg-slate-900" : "bg-slate-50"}`}>
         {!results && !isAnalyzing && (
           <div className={`flex flex-col items-center justify-center h-full min-h-96 text-center p-8 ${dk ? "text-slate-400" : "text-slate-400"}`}>
@@ -969,7 +906,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
 
         {results && !isAnalyzing && (
           <div className="flex flex-col h-full">
-            {/* Sticky tabs */}
             <div className={`sticky top-16 z-30 border-b ${dk ? "bg-slate-900 border-slate-700" : "bg-white border-slate-200"} shadow-sm`}>
               <div className="flex overflow-x-auto">
                 {TABS.map(tab => {
@@ -989,8 +925,6 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
                 })}
               </div>
             </div>
-
-            {/* Tab content */}
             <div className="flex-1 p-5 overflow-y-auto">
               {activeTab === "overview" && renderOverview()}
               {activeTab === "ats" && renderATS()}
