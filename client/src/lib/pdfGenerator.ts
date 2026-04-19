@@ -1,7 +1,17 @@
 /**
  * pdfGenerator.ts
- * Gera o PDF do CV optimizado usando browser print rendering.
- * SEM html2canvas — solução mais robusta e sem problemas de renderização.
+ * Gera o CV optimizado em formato 100% ATS-friendly via browser print.
+ *
+ * Compatível com: Gupy, Recrut.AI, Vagas.com.br, LinkedIn, Panda Pé,
+ * Workday, Taleo, SAP SuccessFactors, Indeed, Catho, InfoJobs.
+ *
+ * Princípios ATS:
+ *  - Coluna única, sem tabelas, sem colunas, sem ícones
+ *  - Fontes padrão (Arial / Helvetica)
+ *  - Cabeçalhos em MAIÚSCULAS com linha separadora simples
+ *  - Bullets com hífen simples
+ *  - Todo texto seleccionável (não imagem)
+ *  - Margens A4 standard: 20mm laterais, 18mm topo/base
  */
 
 function esc(s: string): string {
@@ -12,150 +22,323 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-const SECTIONS_PT = [
-  "RESUMO PROFISSIONAL","COMPETÊNCIAS PRINCIPAIS","COMPETENCIAS PRINCIPAIS",
-  "EXPERIÊNCIA PROFISSIONAL","EXPERIENCIA PROFISSIONAL",
-  "FORMAÇÃO ACADÊMICA","FORMACAO ACADEMICA",
-  "IDIOMAS","CERTIFICAÇÕES","CERTIFICACOES","HABILIDADES",
-  "CURSOS","INFORMAÇÕES ADICIONAIS","INFORMACOES ADICIONAIS",
-  "PUBLICAÇÕES","PUBLICACOES","VOLUNTARIADO","PROJETOS",
-];
-
-function normalize(s: string): string {
+// Normaliza texto para comparar com headers conhecidos
+function norm(s: string): string {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
 }
 
-function isSection(line: string): boolean {
-  const t = normalize(line);
-  return SECTIONS_PT.map(normalize).some(h => t === h || t.startsWith(h + " ") || t.startsWith(h + ":"));
+const KNOWN_SECTIONS = [
+  "RESUMO PROFISSIONAL","COMPETENCIAS PRINCIPAIS","COMPETENCIAS","HABILIDADES",
+  "EXPERIENCIA PROFISSIONAL","EXPERIENCIAS","FORMACAO ACADEMICA","FORMACAO",
+  "IDIOMAS","CERTIFICACOES","CERTIFICADOS","CURSOS","PROJETOS","PUBLICACOES",
+  "VOLUNTARIADO","INFORMACOES ADICIONAIS","PREMIOS","CONQUISTAS","ATIVIDADES",
+  "PROFESSIONAL SUMMARY","CORE COMPETENCIES","PROFESSIONAL EXPERIENCE",
+  "EDUCATION","LANGUAGES","CERTIFICATIONS","SKILLS","COURSES","AWARDS",
+];
+
+function isKnownSection(line: string): boolean {
+  const t = norm(line);
+  return KNOWN_SECTIONS.some(h => t === h || t === h + ":" || t === h + " ");
 }
 
-function isBullet(line: string): boolean {
-  return /^[-•*▪·]\s/.test(line.trim());
+function isBulletLine(line: string): boolean {
+  return /^[-•*▪·✓→►]\s/.test(line.trim());
 }
 
-function isContact(line: string): boolean {
-  return line.includes("|") || line.includes("@") ||
-    line.includes("+55") || line.toLowerCase().includes("linkedin");
+function isContactLine(line: string): boolean {
+  const l = line.toLowerCase();
+  return l.includes("@") || l.includes("+55") || l.includes("linkedin.com") ||
+    l.includes("(11)") || l.includes("(21)") || l.includes("whatsapp") ||
+    (line.includes("|") && (l.includes("sp") || l.includes("rj") || l.includes("paulo")));
 }
 
-function buildPrintHTML(resumeText: string): string {
-  const lines = resumeText.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").split("\n");
+function isJobLine(line: string): boolean {
+  return line.includes(" | ") || line.includes(" – ") ||
+    (line.includes(" - ") && /\d{4}/.test(line));
+}
 
-  let headerHtml = "";
-  let sectionsHtml = "";
-  let currentSection = "";
+function buildResumeHTML(resumeText: string): string {
+  const raw = resumeText.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+  const lines = raw.split("\n");
+
+  let nameHtml = "";
+  let titleHtml = "";
+  let contactHtml = "";
+  let bodyHtml = "";
+
   let nameDone = false;
   let titleDone = false;
   let contactDone = false;
   let inSection = false;
-  let bulletOpen = false;
+  let currentSectionTitle = "";
+  let sectionBody = "";
+  let inBulletList = false;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-
-    if (!line) {
-      if (bulletOpen) { if (inSection) currentSection += "</ul>"; bulletOpen = false; }
-      continue;
-    }
-
-    if (!nameDone) {
-      headerHtml += `<div class="r-name">${esc(line)}</div>`;
-      nameDone = true; continue;
-    }
-
-    if (!titleDone && !isSection(line)) {
-      headerHtml += `<div class="r-title">${esc(line)}</div>`;
-      titleDone = true; continue;
-    }
-
-    if (!contactDone && isContact(line) && !isSection(line)) {
-      headerHtml += `<div class="r-contact">${esc(line)}</div>`;
-      contactDone = true; continue;
-    }
-
-    if (isSection(line)) {
-      if (bulletOpen) { currentSection += "</ul>"; bulletOpen = false; }
-      if (inSection) { sectionsHtml += currentSection + "</div></div>"; }
-      currentSection = `<div class="sec"><div class="sec-hdr"><span>${esc(line)}</span></div><div class="sec-body">`;
-      inSection = true; contactDone = true; continue;
-    }
-
-    if (!inSection) {
-      if (isContact(line)) headerHtml += `<div class="r-contact">${esc(line)}</div>`;
-      continue;
-    }
-
-    // Sub-section detection: ALL CAPS line without bullets
-    const t = line.trim();
-    const isSubSec = t.length >= 3 && t.length <= 70 && t === t.toUpperCase() &&
-      /[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ]/.test(t) && !isBullet(t) && !/^\d/.test(t) && !isSection(t);
-
-    if (isSubSec) {
-      if (bulletOpen) { currentSection += "</ul>"; bulletOpen = false; }
-      currentSection += `<div class="sub">${esc(t)}</div>`; continue;
-    }
-
-    if (isBullet(line)) {
-      const txt = esc(line.replace(/^[-•*▪·]\s+/, ""));
-      if (!bulletOpen) { currentSection += "<ul>"; bulletOpen = true; }
-      currentSection += `<li>${txt}</li>`; continue;
-    }
-
-    if (bulletOpen) { currentSection += "</ul>"; bulletOpen = false; }
-
-    if (line.includes(" | ") || line.includes(" – ") || line.includes(" - ") || line.includes("·")) {
-      currentSection += `<div class="job-line">${esc(line)}</div>`;
-    } else {
-      currentSection += `<p>${esc(line)}</p>`;
-    }
+  function flushSection() {
+    if (!currentSectionTitle) return;
+    if (inBulletList) { sectionBody += `</ul>`; inBulletList = false; }
+    bodyHtml += `
+      <div class="section">
+        <div class="section-header">${esc(currentSectionTitle)}</div>
+        ${sectionBody}
+      </div>`;
+    sectionBody = "";
+    currentSectionTitle = "";
   }
 
-  if (bulletOpen && currentSection) currentSection += "</ul>";
-  if (inSection && currentSection) sectionsHtml += currentSection + "</div></div>";
+  for (let i = 0; i < lines.length; i++) {
+    const raw_line = lines[i];
+    const line = raw_line.trim();
+
+    // Skip blank lines inside sections (we'll manage spacing via CSS)
+    if (!line) {
+      if (inBulletList && inSection) {
+        sectionBody += `</ul>`;
+        inBulletList = false;
+      }
+      continue;
+    }
+
+    // ── Header zone (before first section) ──────────────────────────
+    if (!nameDone) {
+      nameHtml = `<div class="resume-name">${esc(line)}</div>`;
+      nameDone = true;
+      continue;
+    }
+
+    if (!titleDone && !isKnownSection(line) && !isContactLine(line)) {
+      titleHtml = `<div class="resume-title">${esc(line)}</div>`;
+      titleDone = true;
+      continue;
+    }
+
+    if (!contactDone && isContactLine(line) && !isKnownSection(line)) {
+      contactHtml = `<div class="resume-contact">${esc(line)}</div>`;
+      contactDone = true;
+      continue;
+    }
+
+    // If we're still in the pre-section header zone
+    if (!inSection && !isKnownSection(line)) {
+      // Extra contact/info lines before first section
+      if (isContactLine(line)) {
+        contactHtml += `<div class="resume-contact">${esc(line)}</div>`;
+      }
+      continue;
+    }
+
+    // ── Section detection ─────────────────────────────────────────────
+    if (isKnownSection(line)) {
+      flushSection();
+      inSection = true;
+      contactDone = true;
+      currentSectionTitle = line;
+      continue;
+    }
+
+    if (!inSection) continue;
+
+    // ── Inside a section ──────────────────────────────────────────────
+
+    // Sub-section (ALL CAPS, short, not a main header)
+    const isAllCaps = line.length >= 3 && line.length <= 80 &&
+      line === line.toUpperCase() && /[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ]/.test(line) &&
+      !isBulletLine(line) && !/^\d/.test(line);
+
+    if (isAllCaps && !isKnownSection(line)) {
+      if (inBulletList) { sectionBody += `</ul>`; inBulletList = false; }
+      sectionBody += `<div class="subsection">${esc(line)}</div>`;
+      continue;
+    }
+
+    // Job/experience line (Company | Role | Period)
+    if (isJobLine(line)) {
+      if (inBulletList) { sectionBody += `</ul>`; inBulletList = false; }
+      sectionBody += `<div class="job-line">${esc(line)}</div>`;
+      continue;
+    }
+
+    // Bullet point
+    if (isBulletLine(line)) {
+      const text = line.replace(/^[-•*▪·✓→►]\s+/, "").trim();
+      if (!inBulletList) { sectionBody += `<ul>`; inBulletList = true; }
+      sectionBody += `<li>${esc(text)}</li>`;
+      continue;
+    }
+
+    // Regular paragraph
+    if (inBulletList) { sectionBody += `</ul>`; inBulletList = false; }
+    sectionBody += `<p>${esc(line)}</p>`;
+  }
+
+  // Flush the last section
+  flushSection();
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Currículo Optimizado</title>
+<title>Currículo Optimizado — ATS Ready</title>
 <style>
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  @page{size:A4;margin:18mm 20mm 18mm 20mm}
-  body{font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;font-size:10.5pt;line-height:1.5;color:#111;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  /* ── Reset ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  .r-hdr{border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:14px;page-break-inside:avoid}
-  .r-name{font-size:22pt;font-weight:700;color:#111;line-height:1.15;margin-bottom:3px}
-  .r-title{font-size:11pt;font-weight:400;color:#333;margin-bottom:5px}
-  .r-contact{font-size:9pt;color:#555}
-
-  .sec{margin-bottom:13px;page-break-inside:avoid}
-  .sec-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-  .sec-hdr span{font-size:9pt;font-weight:700;text-transform:uppercase;letter-spacing:1.3px;color:#111;white-space:nowrap}
-  .sec-hdr::after{content:'';flex:1;height:1px;background:#111;display:block}
-  .sec-body{page-break-inside:avoid}
-
-  .sub{font-size:10.5pt;font-weight:700;color:#111;margin:7px 0 2px}
-  .job-line{font-size:10pt;font-weight:600;color:#222;margin:5px 0 3px}
-  ul{list-style:none;margin:3px 0 6px 0;padding:0}
-  li{font-size:10pt;color:#333;padding-left:14px;position:relative;margin-bottom:2px;line-height:1.45}
-  li::before{content:"•";position:absolute;left:0;color:#111;font-weight:700}
-  p{font-size:10pt;color:#333;margin-bottom:3px;text-align:justify}
-
-  @media screen{
-    body{background:#94a3b8;padding:20px}
-    .page-wrap{background:#fff;width:210mm;margin:0 auto;padding:18mm 20mm;box-shadow:0 4px 32px rgba(0,0,0,.2)}
+  /* ── Print page setup ── */
+  @page {
+    size: A4;
+    margin: 18mm 20mm 18mm 20mm;
   }
-  @media print{
-    body{background:#fff!important}
-    .page-wrap{padding:0;margin:0;box-shadow:none}
+
+  /* ── Base ── */
+  body {
+    font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.45;
+    color: #000000;
+    background: #ffffff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ── Screen wrapper (print ignores padding from @page) ── */
+  .page-wrap {
+    max-width: 794px;
+    margin: 0 auto;
+  }
+
+  /* ── Header ── */
+  .resume-header {
+    text-align: center;
+    padding-bottom: 10pt;
+    margin-bottom: 10pt;
+    border-bottom: 1.5pt solid #000000;
+  }
+
+  .resume-name {
+    font-size: 20pt;
+    font-weight: 700;
+    letter-spacing: 0.5pt;
+    color: #000000;
+    margin-bottom: 3pt;
+    text-transform: uppercase;
+  }
+
+  .resume-title {
+    font-size: 10.5pt;
+    font-weight: 400;
+    color: #111111;
+    margin-bottom: 4pt;
+  }
+
+  .resume-contact {
+    font-size: 9.5pt;
+    color: #222222;
+    margin-bottom: 2pt;
+  }
+
+  /* ── Sections ── */
+  .section {
+    margin-bottom: 10pt;
+    page-break-inside: avoid;
+  }
+
+  .section-header {
+    font-size: 9.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2pt;
+    color: #000000;
+    padding-bottom: 2pt;
+    margin-bottom: 6pt;
+    border-bottom: 1pt solid #000000;
+  }
+
+  /* ── Sub-sections (category labels inside Competências) ── */
+  .subsection {
+    font-size: 10pt;
+    font-weight: 700;
+    color: #000000;
+    margin-top: 6pt;
+    margin-bottom: 3pt;
+  }
+
+  /* ── Job lines (Company | Role | Period) ── */
+  .job-line {
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: #000000;
+    margin-top: 7pt;
+    margin-bottom: 3pt;
+  }
+
+  /* ── Bullet lists ── */
+  ul {
+    list-style: none;
+    margin: 2pt 0 6pt 0;
+    padding: 0;
+  }
+
+  li {
+    font-size: 10pt;
+    color: #111111;
+    padding-left: 14pt;
+    position: relative;
+    margin-bottom: 2pt;
+    line-height: 1.45;
+    page-break-inside: avoid;
+  }
+
+  li::before {
+    content: "-";
+    position: absolute;
+    left: 0;
+    font-weight: 700;
+    color: #000000;
+  }
+
+  /* ── Paragraphs ── */
+  p {
+    font-size: 10pt;
+    color: #111111;
+    margin-bottom: 3pt;
+    line-height: 1.5;
+    text-align: justify;
+  }
+
+  /* ── Screen-only styles ── */
+  @media screen {
+    body {
+      background: #e2e8f0;
+      padding: 24px;
+    }
+    .page-wrap {
+      background: #ffffff;
+      padding: 20mm;
+      box-shadow: 0 4px 40px rgba(0, 0, 0, 0.18);
+      border-radius: 2px;
+    }
+  }
+
+  /* ── Print overrides ── */
+  @media print {
+    body {
+      background: #ffffff !important;
+    }
+    .page-wrap {
+      padding: 0;
+      box-shadow: none;
+    }
   }
 </style>
 </head>
 <body>
 <div class="page-wrap">
-  <div class="r-hdr">${headerHtml}</div>
-  ${sectionsHtml}
+  <div class="resume-header">
+    ${nameHtml}
+    ${titleHtml}
+    ${contactHtml}
+  </div>
+  ${bodyHtml}
 </div>
 </body>
 </html>`;
@@ -165,16 +348,16 @@ export async function generateResumePDF(
   resumeText: string,
   _lang: "pt" | "en" = "pt"
 ): Promise<void> {
-  const html = buildPrintHTML(resumeText);
+  const html = buildResumeHTML(resumeText);
 
-  const win = window.open("", "_blank", "width=900,height=750,scrollbars=yes");
+  const win = window.open("", "_blank", "width=900,height=800,scrollbars=yes");
   if (!win) {
-    // Fallback: download HTML file
+    // Fallback: download HTML
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "Curriculo_Otimizado.html";
+    a.download = "Curriculo_Otimizado_ATS.html";
     a.click();
     URL.revokeObjectURL(url);
     return;
@@ -191,10 +374,11 @@ export async function generateResumePDF(
     }
   };
 
+  // Wait for fonts and layout to settle
   if (win.document.readyState === "complete") {
-    setTimeout(doPrint, 600);
+    setTimeout(doPrint, 800);
   } else {
-    win.addEventListener("load", () => setTimeout(doPrint, 500));
-    setTimeout(doPrint, 2000);
+    win.addEventListener("load", () => setTimeout(doPrint, 700));
+    setTimeout(doPrint, 2500); // fallback
   }
 }
