@@ -13,6 +13,7 @@ import {
   LayoutPanelLeft, TrendingUp, DollarSign, Lightbulb, Link2,
   ChevronDown, ChevronUp, ExternalLink, Building2, MapPin,
   Search, Briefcase, BookOpen, Star, BarChart2, Eye, User,
+  Target, Linkedin, Award, Compass, Rocket, Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -30,6 +31,8 @@ interface ScoreBreakdown { technicalSkills: number; experience: number; keywords
 interface AtsBreakdown { parsing: number; keywordMatch: number; experienceQuality: number; impactMetrics: number; formatting: number; skillsAlignment: number }
 interface ImprovedBullet { original: string; improved: string; reason: string }
 interface SalaryRange { cltMin: number; cltMax: number; pjMin: number; pjMax: number; currency: string; confidence: "high" | "medium" | "low"; rationale: string }
+interface ValueProposition { score: number; currentStatement: string; improvedStatement: string; isInTopThird: boolean; gaps: string[] }
+interface JobhunterStrategy { primaryPlatforms: string[]; searchTerms: string[]; companyTargets: string[]; approachTips: string[]; urgencyLevel: "alta" | "média" | "baixa" }
 
 export interface AnalysisResult {
   matchScore: number; projectedMatchScore: number; jobTitle?: string; jobArea?: string;
@@ -50,6 +53,8 @@ export interface AnalysisResult {
     profileTips: string[];
   };
   recruiterProfile?: { companyType: string; cultureSignals: string; recruiterFears: string[]; recruiterTriggers: string[]; idealNarrative: string };
+  valueProposition?: ValueProposition;
+  jobhunterStrategy?: JobhunterStrategy;
 }
 
 interface SavedCV { text: string; fileName: string; savedAt: string }
@@ -143,13 +148,14 @@ function Skeleton() {
   );
 }
 
-type Tab = "overview" | "ats" | "salary" | "improvements" | "cv";
+type Tab = "overview" | "ats" | "salary" | "improvements" | "cv" | "carreira";
 
 const TABS = [
   { id: "overview" as Tab, label: "Visão Geral", icon: BarChart2 },
   { id: "ats" as Tab, label: "ATS", icon: Zap },
   { id: "salary" as Tab, label: "Salário", icon: DollarSign },
   { id: "improvements" as Tab, label: "Melhorias", icon: Lightbulb },
+  { id: "carreira" as Tab, label: "Carreira", icon: Compass },
   { id: "cv" as Tab, label: "CV Otimizado", icon: FileText },
 ];
 
@@ -631,6 +637,201 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
     );
   };
 
+  // ── CARREIRA TAB ─────────────────────────────────────────────────────────────
+  const renderCarreira = () => {
+    if (!results) return null;
+    const vp = results.valueProposition;
+    const jh = results.jobhunterStrategy;
+    const li = results.linkedinOptimization;
+
+    const urgencyColor = jh?.urgencyLevel === "alta"
+      ? "bg-red-100 text-red-700 border-red-200"
+      : jh?.urgencyLevel === "média"
+        ? "bg-amber-100 text-amber-700 border-amber-200"
+        : "bg-green-100 text-green-700 border-green-200";
+
+    const vpColor = vp
+      ? vp.score >= 70 ? "#10b981" : vp.score >= 40 ? "#f59e0b" : "#ef4444"
+      : "#94a3b8";
+
+    return (
+      <div className="space-y-4">
+
+        {/* ── PROPOSTA DE VALOR ── */}
+        {vp && (
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 bg-gradient-to-r from-violet-50 to-white border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Award className="w-4 h-4 text-violet-600" />
+                <span className="font-semibold text-sm text-slate-900">Proposta de Valor</span>
+                {!vp.isInTopThird && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-700">
+                    Não está no terço superior
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-slate-400">Score</span>
+                <span className="text-sm font-bold" style={{ color: vpColor }}>{vp.score}/100</span>
+              </div>
+            </div>
+            <div className="p-4 space-y-3">
+              {vp.currentStatement && (
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Atual — o que o currículo comunica hoje</p>
+                  <p className="text-xs text-slate-500 italic leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                    "{vp.currentStatement}"
+                  </p>
+                </div>
+              )}
+              {vp.improvedStatement && (
+                <div>
+                  <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wide mb-1.5">Sugestão — proposta de valor ideal</p>
+                  <p className="text-xs text-violet-900 font-medium leading-relaxed bg-violet-50 p-2.5 rounded-lg border border-violet-100">
+                    "{vp.improvedStatement}"
+                  </p>
+                </div>
+              )}
+              {vp.gaps && vp.gaps.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wide mb-1.5">O que está faltando</p>
+                  <ul className="space-y-1">
+                    {vp.gaps.map((g, i) => (
+                      <li key={i} className="flex items-start gap-1.5 text-xs text-slate-600">
+                        <span className="text-amber-500 mt-0.5 flex-shrink-0">⚠</span>{g}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── ESTRATÉGIA JOBHUNTER ── */}
+        {jh && (
+          <Collapsible title="Estratégia de Busca de Emprego" icon={Rocket} defaultOpen
+            badge={jh.urgencyLevel === "alta" ? "Urgência Alta" : jh.urgencyLevel === "média" ? "Urgência Média" : "Urgência Baixa"}>
+            <div className="space-y-4 pt-1">
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${urgencyColor}`}>
+                <Target className="w-3.5 h-3.5" />
+                Urgência de ação: {jh.urgencyLevel}
+              </div>
+              {jh.primaryPlatforms.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">Plataformas prioritárias</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {jh.primaryPlatforms.map((p, i) => (
+                      <span key={i} className="px-2.5 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">{p}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {jh.searchTerms.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">Termos de busca exatos</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {jh.searchTerms.map((t, i) => (
+                      <span key={i} className="px-2.5 py-1 bg-slate-100 text-slate-700 text-xs rounded-full border border-slate-200 font-mono">"{t}"</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {jh.companyTargets.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">Empresas que contratam este perfil</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {jh.companyTargets.map((c, i) => (
+                      <span key={i} className="flex items-center gap-1 px-2.5 py-1 bg-green-50 text-green-800 text-xs rounded-full border border-green-100">
+                        <Building2 className="w-3 h-3" />{c}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {jh.approachTips.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">Como abordar recrutadores</p>
+                  <ul className="space-y-2">
+                    {jh.approachTips.map((tip, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                        <span className="text-blue-500 font-bold flex-shrink-0">{i + 1}.</span>{tip}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </Collapsible>
+        )}
+
+        {/* ── LINKEDIN ── */}
+        {li && (
+          <Collapsible title="Otimização de LinkedIn" icon={Linkedin}>
+            <div className="space-y-4 pt-1">
+              <div>
+                <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wide mb-1.5">Headline sugerida</p>
+                <div className="flex items-start justify-between gap-2 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                  <p className="text-xs text-blue-900 font-medium leading-relaxed">{li.headline}</p>
+                  <button onClick={() => navigator.clipboard.writeText(li.headline)} className="flex-shrink-0 text-blue-400 hover:text-blue-600" title="Copiar">
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+              {li.about && (
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Texto "Sobre" sugerido</p>
+                  <div className="relative p-3 bg-slate-50 rounded-lg border border-slate-100 max-h-48 overflow-y-auto">
+                    <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">{li.about}</p>
+                    <button onClick={() => navigator.clipboard.writeText(li.about)} className="absolute top-2 right-2 text-slate-400 hover:text-slate-600" title="Copiar">
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+              {li.skillsToAdd && li.skillsToAdd.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Skills para adicionar ao perfil</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {li.skillsToAdd.map((s, i) => (
+                      <span key={i} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs rounded-full">{s}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {li.featuredSection && (
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">O que fixar na seção em destaque</p>
+                  <p className="text-xs text-slate-600 leading-relaxed bg-amber-50 p-2.5 rounded-lg border border-amber-100">{li.featuredSection}</p>
+                </div>
+              )}
+              {li.profileTips && li.profileTips.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Dicas de perfil</p>
+                  <ul className="space-y-2">
+                    {li.profileTips.map((tip, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs text-slate-700">
+                        <Globe className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0 mt-0.5" />{tip}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </Collapsible>
+        )}
+
+        {!vp && !jh && !li && (
+          <div className="text-center py-12 text-slate-400">
+            <Compass className="w-10 h-10 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">Dados de carreira disponíveis após a análise</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+
   const renderCV = () => {
     if (!results) return null;
     return (
@@ -867,7 +1068,7 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
               <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
               <div>
                 <p className="font-semibold text-blue-900 text-sm">Analisando com IA...</p>
-                <p className="text-xs text-blue-600 mt-0.5">Motor ATS + 4 camadas de inteligência</p>
+                <p className="text-xs text-blue-600 mt-0.5">Motor ATS + 7 camadas: narrativa, proposta de valor, salário, LinkedIn, estratégia de busca</p>
               </div>
             </div>
             <Skeleton />
@@ -900,6 +1101,7 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
               {activeTab === "ats" && renderATS()}
               {activeTab === "salary" && renderSalary()}
               {activeTab === "improvements" && renderImprovements()}
+              {activeTab === "carreira" && renderCarreira()}
               {activeTab === "cv" && renderCV()}
             </div>
           </div>
