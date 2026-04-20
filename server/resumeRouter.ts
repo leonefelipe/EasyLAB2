@@ -87,6 +87,24 @@ const AnalysisResultSchema = z.object({
     recruiterTriggers: z.array(z.string()),
     idealNarrative: z.string(),
   }),
+
+  // ── NEW: Value Proposition ────────────────────────────────────────────────
+  valueProposition: z.object({
+    score: z.number(),
+    currentStatement: z.string(),
+    improvedStatement: z.string(),
+    isInTopThird: z.boolean(),
+    gaps: z.array(z.string()),
+  }),
+
+  // ── NEW: Jobhunter Strategy ───────────────────────────────────────────────
+  jobhunterStrategy: z.object({
+    primaryPlatforms: z.array(z.string()),
+    searchTerms: z.array(z.string()),
+    companyTargets: z.array(z.string()),
+    approachTips: z.array(z.string()),
+    urgencyLevel: z.enum(["alta", "média", "baixa"]),
+  }),
 });
 
 export type AnalysisResult = z.infer<typeof AnalysisResultSchema>;
@@ -368,6 +386,32 @@ const ANALYSIS_JSON_SCHEMA = {
       required: ["companyType", "cultureSignals", "recruiterFears", "recruiterTriggers", "idealNarrative"],
       additionalProperties: false,
     },
+    // Value Proposition
+    valueProposition: {
+      type: "object",
+      properties: {
+        score: { type: "number" },
+        currentStatement: { type: "string" },
+        improvedStatement: { type: "string" },
+        isInTopThird: { type: "boolean" },
+        gaps: { type: "array", items: { type: "string" } },
+      },
+      required: ["score", "currentStatement", "improvedStatement", "isInTopThird", "gaps"],
+      additionalProperties: false,
+    },
+    // Jobhunter Strategy
+    jobhunterStrategy: {
+      type: "object",
+      properties: {
+        primaryPlatforms: { type: "array", items: { type: "string" } },
+        searchTerms: { type: "array", items: { type: "string" } },
+        companyTargets: { type: "array", items: { type: "string" } },
+        approachTips: { type: "array", items: { type: "string" } },
+        urgencyLevel: { type: "string", enum: ["alta", "média", "baixa"] },
+      },
+      required: ["primaryPlatforms", "searchTerms", "companyTargets", "approachTips", "urgencyLevel"],
+      additionalProperties: false,
+    },
   },
   required: [
     "matchScore", "projectedMatchScore", "jobTitle", "jobArea",
@@ -380,6 +424,8 @@ const ANALYSIS_JSON_SCHEMA = {
     "salaryRange", "negotiationTips",
     "linkedinOptimization",
     "recruiterProfile",
+    "valueProposition",
+    "jobhunterStrategy",
   ],
   additionalProperties: false,
 } as const;
@@ -459,22 +505,50 @@ The top third of the resume is the decision zone.
 15. COMPETITIVE POSITIONING IGNORED — resume doesn't stand out in pool of 50-300 candidates.
 
 ════════════════════════════════════════════════════════════
-  STAR-METHOD BULLET POINT TRANSFORMATION
+  TRANSFORMAÇÃO DE BULLETS — MÉTODO STAR (PT-BR)
 ════════════════════════════════════════════════════════════
 
-Transform weak task-oriented bullets into STAR-method impact bullets:
-WEAK: "Responsible for managing a sales team"
-STRONG: "Led 12-person B2B sales team, surpassing annual quota by 127% and generating R$4.8M in new ARR"
+VERBOS DE AÇÃO FORTE EM PORTUGUÊS — USE ESTES, NÃO OS INGLESES:
+Liderou · Estruturou · Escalou · Negociou · Conquistou · Entregou
+Implementou · Reduziu · Automatizou · Redesenhou · Acelerou · Dobrou
+Captou · Reverteu · Expandiu · Unificou · Migrou · Treinou · Otimizou
+Gerou · Aumentou · Diminuiu · Reformulou · Coordenou · Desenvolveu
+Implantou · Reestruturou · Centralizou · Digitalizou · Mapeou · Padronizou
 
-WEAK: "Worked with customer service"
-STRONG: "Managed 200+ monthly enterprise accounts, achieving 96% CSAT score and reducing churn by 18%"
+TRANSFORMAÇÕES OBRIGATÓRIAS (exemplos em PT-BR):
 
-Rules for improved bullets:
-1. Start with a strong action verb (Led, Built, Increased, Reduced, Delivered, Generated, Launched)
-2. Include SCALE (how many people, accounts, projects, dollars)
-3. Include RESULT (%, R$, time saved, rank achieved)
-4. Include CONTEXT when relevant (industry, tools used)
-5. Never invent numbers — only improve structure and verb strength when no metrics are available
+FRACO: "Responsável por gerenciar equipe de vendas"
+FORTE: "Liderou equipe de 12 BDRs B2B, superando meta anual em 127% e gerando R$4,8M em nova receita recorrente"
+
+FRACO: "Atuei no atendimento ao cliente"
+FORTE: "Gerenciou carteira de 200+ contas enterprise mensais, alcançando CSAT de 96% e reduzindo churn em 18%"
+
+FRACO: "Participei de projetos de RH"
+FORTE: "Coordenou implantação do ATS Gupy em 3 unidades com 200+ vagas ativas, reduzindo time-to-hire em 35%"
+
+FRACO: "Trabalhei na área financeira"
+FORTE: "Reestruturou processo de conciliação contábil, eliminando 12h semanais de retrabalho e reduzindo divergências em 94%"
+
+FRACO: "Fui responsável por treinamentos"
+FORTE: "Desenvolveu trilha de onboarding EAD para 350 colaboradores, reduzindo tempo de ramp-up de 90 para 45 dias"
+
+FRACO: "Cuidei do controle de estoque"
+FORTE: "Implantou sistema WMS em CD com 15.000 SKUs, reduzindo ruptura de estoque em 67% e avarias em 42%"
+
+REGRAS ABSOLUTAS PARA improvedBullets:
+1. Verbo SEMPRE em português, passado, 3ª pessoa singular (Liderou, Implementou, Gerou)
+2. Incluir ESCALA quando possível (quantas pessoas, contas, projetos, R$, unidades)
+3. Incluir RESULTADO (%, R$, tempo economizado, posição atingida, ranking)
+4. NUNCA inventar números — se não há métricas, fortalecer o verbo e o contexto qualitativo
+5. NUNCA usar "Responsável por...", "Atuou em...", "Participou de...", "Trabalhei em..."
+6. NUNCA usar verbos em inglês no currículo (Led → Liderou, Built → Estruturou, Increased → Aumentou)
+7. Termos técnicos internacionais permanecem em inglês: CRM, ATS, KPI, ROI, SaaS, B2B, CSAT, NPS
+8. O campo reason deve estar em PORTUGUÊS e explicar: por que o bullet era fraco + o que a melhoria entrega
+
+QUANDO NÃO HÁ MÉTRICAS NO ORIGINAL:
+Nível MÉDIO: "Atuou em vendas B2B complexas no setor de tecnologia"
+Nível FORTE: "Conduziu ciclos de vendas B2B complexas no setor de tecnologia, do mapeamento de conta ao fechamento de contratos multi-year com decisores C-Level"
+Regra: mesmo sem números, o bullet melhorado deve adicionar CONTEXTO (tipo de venda, nível do interlocutor, complexidade, escopo) que o original não tinha.
 
 ════════════════════════════════════════════════════════════
   ELITE ATS SCORING SYSTEM (0-100) — STRICT CALIBRATION
@@ -652,31 +726,55 @@ Output: recruiterProfile object with { companyType, cultureSignals, recruiterFea
 
 Generate a complete LinkedIn optimization plan for this candidate based on their resume and target role.
 
-LINKEDIN HEADLINE (max 220 characters):
-- Must be keyword-rich and describe VALUE, not just job title
-- Formula: [Seniority] + [Function] + [Differentiator] + [Impact/Result]
-- Example: "Headhunter Sênior | Talent Acquisition & Executive Search | +18 anos em Recrutamento B2B | Robert Half"
-- Avoid generic titles like "Profissional em busca de oportunidade"
+LINKEDIN HEADLINE (max 220 caracteres):
+FÓRMULA OBRIGATÓRIA (driverh method):
+[Seniority] + [Função Principal] + [Diferenciador Raro] + [Resultado/Impacto Quantificado]
 
-LINKEDIN ABOUT / RESUMO (max 2600 characters):
-- First 2 lines MUST capture attention (they show before "Ver mais")
-- Structure: Hook → Career narrative → Key achievements with numbers → What you bring → CTA
-- Written in first person, professional but personable
-- Include 3-5 strategic keywords for LinkedIn SEO
-- End with a soft call to action
+EXEMPLOS CORRETOS:
+→ "Headhunter Sênior | Executive Search & Talent Acquisition | +18 anos B2B | Especialista em Tech & Saúde"
+→ "CFO & Controller | Reestruturação Financeira | IPO-ready | +R$500M sob gestão"
+→ "Head de Vendas SaaS | Scale-up de 0 a R$10M ARR | Metodologia MEDDIC | Ex-Totvs, Salesforce"
+→ "Gerente de Logística | Supply Chain & WMS | Lean Six Sigma Green Belt | Redução de 40% em custos operacionais"
+
+EXEMPLOS PROIBIDOS (genéricos — NUNCA usar):
+✗ "Profissional em busca de oportunidade"
+✗ "Gerente Comercial | Vendas | Resultados"
+✗ "Executiva experiente | LinkedIn"
+✗ "Aberto(a) a oportunidades"
+
+REGRA CRÍTICA: A headline deve ser um ímã de headhunters. Se um headhunter buscar
+o perfil-alvo do candidato, a headline deve aparecer nos resultados E convencer em 1 linha.
+Inclua pelo menos 1 número ou resultado concreto quando o candidato tiver métricas no CV.
+
+LINKEDIN ABOUT / RESUMO (max 2600 caracteres):
+ESTRUTURA OBRIGATÓRIA:
+Linha 1-2: GANCHO — afirmação ousada, número impactante, ou pergunta que prende atenção
+            (essas 2 linhas aparecem ANTES do "Ver mais" — são as mais críticas do perfil)
+Bloco 2: TRAJETÓRIA — 3-4 frases que contam a história profissional com contexto e lógica
+Bloco 3: CONQUISTAS — 2-3 resultados quantificados com contexto específico
+Bloco 4: PROPOSTA DE VALOR — o que você entrega + para qual tipo de empresa/desafio
+Linha final: CTA — "Aberto(a) a conversas sobre [área]. Me chame por mensagem direta."
+
+KEYWORDS PARA SEO DO LINKEDIN (obrigatório):
+Inclua 4-5 keywords estratégicas de forma natural no texto "Sobre".
+Keywords aumentam a probabilidade de aparecer em filtros de recrutadores pagos (LinkedIn Recruiter).
+Prioridade: termos que aparecem com frequência em vagas da área do candidato.
+Escrito em primeira pessoa, tom profissional mas com personalidade.
 
 FEATURED SECTION:
-- Suggest what to pin: achievements, media mentions, specific projects, articles
-- Be specific to this candidate's background
+Suggest what to pin: achievements, media mentions, specific projects, articles
+Be specific to this candidate's background
 
 SKILLS TO ADD:
-- List 10-15 LinkedIn skills to add/prioritize for endorsements
-- Mix of hard skills, soft skills, and tools relevant to the target role
-- Priority order: most searched first
+List 10-15 LinkedIn skills to add/prioritize for endorsements
+Mix of hard skills, soft skills, and tools relevant to the target role
+Priority order: most searched first
 
-PROFILE TIPS:
-- 4-5 specific, actionable tips for this candidate's profile
-- Cover: profile photo, banner, URL customization, recommendations strategy, content strategy
+PROFILE TIPS — OBRIGATÓRIO incluir SEMPRE estes 3 itens:
+1. SSI (Social Selling Index): "Acesse linkedin.com/sales/ssi para ver seu score atual. O SSI tem 4 componentes (25pts cada): Marca Profissional — perfil completo com foto, banner, headline e Sobre otimizados; Encontrar Pessoas Certas — conexões estratégicas na sua área; Engajamento com Insights — comentar e compartilhar conteúdo relevante; Cultivar Relacionamentos — mensagens personalizadas, não spam. Meta mínima: SSI acima de 60 para aparecer com frequência nas buscas de recrutadores."
+2. Consistência CV-LinkedIn: "Certifique-se que datas, cargos e empresas do LinkedIn espelham EXATAMENTE este CV otimizado. O Gupy (usado por 2.800+ empresas) cruza seu CV com seu LinkedIn automaticamente — inconsistências reduzem seu ranking no processo seletivo."
+3. Employee Advocacy (quando candidato trabalha em empresa reconhecida): "Ative o Employee Advocacy: compartilhe conteúdos oficiais da empresa com sua perspectiva pessoal em 1-2 posts por semana. Isso aumenta seu alcance orgânico em até 8x e sinaliza engajamento cultural para recrutadores — um gatilho positivo no algoritmo do LinkedIn."
+Adicione 2-3 tips específicas para o perfil deste candidato (foto, banner, URL personalizada, estratégia de recomendações, conteúdo).
 
 Output: linkedinOptimization object with { headline, about, featuredSection, skillsToAdd (array), profileTips (array) }
 All content in Brazilian Portuguese.
@@ -768,6 +866,98 @@ Regra prática: "Quanto seria o equivalente em PJ?" = CLT bruto × 1.45 (faixa m
 6. Confidence "low" = área não mapeada ou informações insuficientes — mas ainda deve dar números, não ranges vagos
 7. O rationale DEVE mencionar: (a) o cargo específico usado como base, (b) o fator que ancora o valor mais alto, (c) o fator que poderia pressionar para baixo
 
+═══ PROTOCOLO OBRIGATÓRIO DE CÁLCULO SALARIAL ═══
+
+ANTES de definir qualquer faixa, execute este checklist mentalmente:
+
+PASSO 1 — Localização:
+□ Candidato menciona cidade? → Aplicar multiplicador geográfico correto da tabela acima.
+□ Sem menção de cidade → Usar São Paulo como base (100%) e declarar no rationale: "Localização não confirmada — base SP aplicada".
+□ "Remoto" para empresa SP/RJ → 90-100% do valor presencial SP.
+□ "Remoto" para empresa internacional (em BRL) → +10-20% sobre SP.
+
+PASSO 2 — Prêmios de seniority (aplicar AUTOMATICAMENTE quando detectados no CV):
+□ Idioma fluente (inglês/espanhol/francês) → +8-15% AUTOMATICAMENTE
+□ MBA FGV / Insper / USP / top-tier → +5-12% AUTOMATICAMENTE
+□ 18+ anos de experiência comprovada → Posicionar no TOP 25% da faixa AUTOMATICAMENTE
+□ Histórico em multinacional Fortune 500 (IBM, P&G, Unilever, SAP, Oracle, etc.) → +10-20% AUTOMATICAMENTE
+□ C-Level ou VP experience → +15-25% AUTOMATICAMENTE
+□ Certificações valorizadas (PMP, CFA, CPA, black belt, etc.) → +5-10% AUTOMATICAMENTE
+
+PASSO 3 — CLT vs PJ:
+□ PJ = CLT × 1.45 (multiplicador médio — NUNCA usar outro valor sem justificativa)
+□ Se o candidato menciona preferência por PJ → priorizar range PJ na análise
+
+PASSO 4 — Confidence:
+□ "high": cargo exato na tabela + cidade confirmada + seniority clara → números específicos
+□ "medium": cargo aproximado OU localização não confirmada → range um pouco mais amplo
+□ "low": área não mapeada → ainda dar números específicos. Confidence "low" NÃO significa "não dar valor".
+
+PASSO 5 — Rationale (OBRIGATÓRIO — mínimo 3 frases):
+(a) "Base utilizada: [cargo específico da tabela com a faixa]"
+(b) "Prêmio aplicado: [o que justifica o topo ou acima da mediana]"
+(c) "Fator de pressão: [o que poderia pressionar para a mediana ou abaixo]"
+
+EXEMPLO CORRETO de rationale:
+"Base: Especialista TA Sênior (CLT R$8.000-R$13.000). Prêmio aplicado: inglês fluente (+12%) + histórico em multinacional Robert Half (+15%) = posicionamento no top 15% da faixa. Fator de pressão: gap de 8 meses pode pressionar 10% abaixo do topo na negociação inicial — candidato deve ancorar com o valor médio-alto e ceder apenas na última rodada."
+
+EXEMPLO ERRADO (não fazer):
+"Salário estimado com base no perfil e mercado brasileiro." → vago, inaceitável.
+
+════════════════════════════════════════════════════════════
+  LAYER 7 — NARRATIVE COHERENCE (trajetória narrativa)
+════════════════════════════════════════════════════════════
+
+Este é o layer que separa um currículo mediano de um currículo que "conta uma história".
+Todos os profissionais de carreira de referência (Isabelle Facina, driverh, Karine Müller) 
+tratam a TRAJETÓRIA NARRATIVA como o diferencial central de seu trabalho.
+
+Avalie 5 dimensões de coerência narrativa:
+
+1. CRESCIMENTO VISÍVEL:
+   - Há progressão clara de senioridade, responsabilidade ou escopo ao longo da carreira?
+   - Se houve promoção, ela é visível no título E na descrição?
+   - Se não há progressão visível, este é um GAP NARRATIVO CRÍTICO a endereçar.
+   - Exemplo de narrativa forte: Analista (2018) → Especialista (2020) → Coordenador (2022) → Gerente (2024)
+
+2. RESUMO PROFISSIONAL como GANCHO DE HISTÓRIA:
+   - As primeiras 3-5 linhas posicionam o valor único do candidato?
+   - Elas respondem: QUEM é, O QUE entrega, POR QUE contratar eles em vez dos outros 200?
+   - Um bom resumo é o TRAILER do filme da carreira — não uma lista de adjetivos.
+   - RED FLAG: "Profissional dedicado com ampla experiência em..." = diferenciação ZERO.
+   - RED FLAG: "Sou uma pessoa proativa, comunicativa e comprometida..." = invisível para ATS E para humano.
+
+3. FIO CONDUTOR DA CARREIRA:
+   - Há lógica conectando os diferentes papéis, mesmo que em áreas diferentes?
+   - Se o candidato mudou de área/setor, isso está posicionado como EVOLUÇÃO ou parece confuso?
+   - Perfis híbridos (Vendas + RH, Tech + Gestão, Finanças + Operações) devem ser posicionados 
+     como VANTAGEM COMPETITIVA RARA, não como falta de foco.
+
+4. SINAIS DE EMPLOYER BRAND:
+   - O candidato trabalhou em empresas reconhecidas? Isso deve ser visível e valorizado.
+   - Empresas desconhecidas precisam de CONTEXTO: "Startup de logística com R$50M em receita" é 
+     infinitamente melhor que só o nome da empresa.
+
+5. PROPOSTA DE VALOR (value proposition):
+   - O currículo tem UMA resposta clara e memorável para "por que me contratar"?
+   - Essa resposta está no TERÇO SUPERIOR do documento?
+   - É específica para o cargo-alvo, ou genérica o suficiente para ser ignorada?
+
+IMPACTO NO OUTPUT:
+- valueProposition.currentStatement: extrair o que existe hoje como "gancho" (ou declarar "ausente")
+- valueProposition.improvedStatement: escrever uma proposta de 2-3 linhas que responde:
+  [Seniority/área] + [resultado principal com número] + [diferencial único] + [tipo de empresa/desafio ideal]
+  Exemplo: "Gerente Comercial com 12 anos em SaaS B2B Enterprise especializado em escalar equipes de vendas (0→30 SDRs) e superar cotas em mercados competitivos (média de 134% de atingimento). Histórico em Totvs, Resultados Digitais e Salesforce."
+- valueProposition.isInTopThird: true se o Resumo Profissional aparece antes da 2ª experiência
+- valueProposition.gaps: listar o que está faltando para uma proposta de valor forte
+- valueProposition.score: 0-100, onde 100 = proposta de valor irresistível, específica e bem posicionada
+
+careerTrajectory (campo obrigatório): escrever como avaliação de 2-3 frases:
+"A carreira de [nome/candidato] mostra [padrão observado — crescimento linear / mudança de área / perfil híbrido]. 
+O principal gap narrativo é [problema específico]. 
+O ângulo de posicionamento mais forte é [recomendação específica e acionável]."
+NUNCA ser genérico. SEMPRE ser específico ao candidato analisado.
+
 ════════════════════════════════════════════════════════════
   MULTI-CAREER ANALYSIS — HYBRID PROFESSIONALS
 ════════════════════════════════════════════════════════════
@@ -819,8 +1009,15 @@ AUTO-VERIFICATION before returning:
 □ matchScore = exact sum of scoreBreakdown?
 □ atsScore = direct sum of all six atsScoreBreakdown components?
 □ Each improvedBullet.original actually exists (or closely resembles) a bullet in the resume?
+□ Each improvedBullet.improved uses a PORTUGUESE action verb (Liderou, Gerou, Estruturou)?
 □ Header line 3 has ALL contact info (city, phone, email, LinkedIn) on ONE SINGLE LINE pipe-separated?
 □ optimizedResume is written in Brazilian Portuguese?
+□ valueProposition.improvedStatement answers: WHO + WHAT delivers + UNIQUE differentiator?
+□ jobhunterStrategy.companyTargets lists REAL companies (not generic descriptions)?
+□ linkedinOptimization.headline uses the driverh formula (Seniority + Function + Differentiator + Result)?
+□ linkedinOptimization.profileTips includes SSI tip AND CV-LinkedIn consistency tip?
+□ salaryRange.rationale mentions: (a) base cargo used, (b) premium applied, (c) downward pressure factor?
+□ careerTrajectory is SPECIFIC to this candidate (not a generic template)?
 IF ANY ANSWER IS NO → FIX BEFORE RETURNING.
 
 ════════════════════════════════════════════════════════════
@@ -919,6 +1116,33 @@ This CV will be read by a human, not an ATS. Optimize to impress:
 - Coherent career narrative — the trajectory must tell a story of growth
 - Can be up to 2 pages with rich and detailed content
 - More assertive and confident tone in describing achievements`,
+
+  totvs: `PLATAFORMA: TOTVS PROTHEUS RH / TOTVS RH WEB (empresas industriais e de médio porte BR)
+- Parser MENOS sofisticado que Gupy — prefere correspondência EXATA de palavras-chave
+- ESSENCIAL: incluir termos em português E inglês quando ambos são usados no mercado (ex: "gestão de estoque" E "inventory management")
+- Empresa-chave: indústria, manufatura, construção civil, distribuição e varejo de médio porte
+- REMOVER: CPF, RG, data de nascimento, estado civil do CV — TOTVS coleta esses dados no formulário
+- Tamanho: máximo 2 páginas. Mais de 2 páginas prejudica parsing significativamente.
+- Seções reconhecidas: EXPERIÊNCIA PROFISSIONAL, FORMAÇÃO ACADÊMICA, CURSOS E CERTIFICAÇÕES, HABILIDADES
+- Não usa ranking automático por relevância semântica — a triagem é majoritariamente manual pelo RH
+- Dica extra: mencionar ferramentas ERP explicitamente (TOTVS Protheus, SAP, Oracle) aumenta matching manual`,
+
+  senior: `PLATAFORMA: SÊNIOR SISTEMAS HCM (construção civil, agronegócio, saúde, indústria)
+- Sistema muito comum em empresas de construção, agronegócio e saúde no Brasil
+- Matching por correspondência literal — sem NLP semântico
+- INCLUIR: variações com e sem acento (ex: "gestão" e "gestao") para garantir match em diferentes versões
+- Para logística/construção/agro: certificações NR (NR-35, NR-10, NR-12) devem aparecer em seção dedicada e destacada
+- Para saúde: registro profissional (CRM, COREN, CRF) deve estar no topo do cabeçalho
+- Formato preferido: PDF simples, sem colunas, sem tabelas, sem ícones
+- Tamanho: 1-2 páginas`,
+
+  kenoby: `PLATAFORMA: KENOBY / GUPY HIRE (startups e scale-ups brasileiras)
+- NLP semântico similar ao Gupy clássico, mas ligeiramente mais permissivo em formatação
+- Muito usado por startups Series B/C e scale-ups tech brasileiras
+- Inclui avaliações comportamentais integradas — o CV é apenas a fase 1
+- DICA: incluir linguagem de fit cultural no Professional Summary ajuda na pontuação comportamental automática da plataforma (colaboração, impacto, crescimento, propósito)
+- Skills técnicas devem estar no topo do CV, antes da experiência
+- Consistência CV-LinkedIn é verificada automaticamente — garantir que as informações espelham`,
 };
 
 // ─── Router ───────────────────────────────────────────────────────────────────
@@ -997,22 +1221,25 @@ ${jobSection}
 
 ANALYSIS INSTRUCTIONS:
 
-Execute your SIX-LAYER analysis (ATS + Human Recruiter + Competitive Intelligence + Salary/Negotiation + LinkedIn + Multi-Career).
+Execute your SEVEN-LAYER analysis (ATS + Human Recruiter + Competitive Intelligence + Salary/Negotiation + LinkedIn + Multi-Career + Narrative Coherence).
 
 1. Score the resume BEFORE optimization (matchScore = sum of scoreBreakdown components)
 2. Calculate elite atsScore = DIRECT SUM of all six atsScoreBreakdown components
 3. Identify ALL 15 Career Killers that apply to this specific resume
 4. Generate the optimized resume maintaining IDENTICAL factual data (dates, companies, titles)
-5. For improvedBullets: identify 3-5 weak bullets from the original and show STAR-method transformations
+5. For improvedBullets: identify 3-5 weak bullets from the original and show STAR-method transformations IN PORTUGUESE (use PT-BR action verbs: Liderou, Implementou, Gerou, Estruturou — NEVER Led, Built, Increased)
 6. List missingKeywords: exact terms from JD/target not present in resume
 7. projectedMatchScore MUST be >= matchScore (optimization can only improve, never worsen)
 8. COMPETITIVE INTELLIGENCE: analyze this candidate vs. the typical applicant pool for this role
-9. SALARY INTELLIGENCE: use real Brazilian market benchmarks — position senior candidates (10+ years) at TOP of range
+9. SALARY INTELLIGENCE: use real Brazilian market benchmarks — apply geographic multipliers and seniority premiums AUTOMATICALLY per the protocol above
 10. RECRUITER PROFILE: decode what the hiring manager fears and what triggers an immediate call
-11. LINKEDIN OPTIMIZATION: generate complete headline, About section, featured section, skills, and profile tips
+11. LINKEDIN OPTIMIZATION: generate complete headline (using driverh formula), About section (with hook + narrative structure), featured section, skills, and profile tips (ALWAYS include SSI tip, CV-LinkedIn consistency tip, and Employee Advocacy tip)
 12. MULTI-CAREER: if candidate has experience in multiple areas, analyze ALL areas — do NOT reduce to only the most recent role
-13. Be rigorously honest — if compatibility is low, say so and explain the gap
-14. All text in Brazilian Portuguese except internationally adopted English terms
+13. NARRATIVE COHERENCE (Layer 7): evaluate career trajectory, professional summary as hook, value proposition presence and position, employer brand signals, and career thread logic
+14. VALUE PROPOSITION: assess currentStatement (what exists today), write an improvedStatement (2-3 lines answering: who + what delivers + unique differentiator), flag isInTopThird, list gaps
+15. JOBHUNTER STRATEGY: recommend primaryPlatforms (specific for this profile/sector in Brazil), searchTerms (5-8 exact search terms to use on platforms), companyTargets (4-6 real companies that hire this profile), approachTips (3 specific tips for this profile), urgencyLevel
+16. Be rigorously honest — if compatibility is low, say so and explain the gap
+17. All text in Brazilian Portuguese except internationally adopted English terms
 
 Return ONLY valid JSON. No markdown, no text outside JSON.
 
@@ -1109,6 +1336,22 @@ JSON structure:
       "<2-3 specific triggers that will make THIS recruiter immediately excited — based on JD signals>"
     ],
     "idealNarrative": "<The one-paragraph story this recruiter wants the candidate to tell — what arc, what proof points, what tone>"
+  },
+
+  "valueProposition": {
+    "score": <0-100 — how strong and clear is the current value proposition>,
+    "currentStatement": "<extract the current 'hook' or value prop from the resume, or write 'Ausente — o resumo não possui proposta de valor clara'>",
+    "improvedStatement": "<Write a 2-3 line improved value proposition: [Seniority/área] + [resultado principal com número] + [diferencial único] + [tipo empresa/desafio ideal] — in Portuguese>",
+    "isInTopThird": <true if Professional Summary appears before the 2nd job experience, false otherwise>,
+    "gaps": ["<what is missing for a strong value proposition — be specific>"]
+  },
+
+  "jobhunterStrategy": {
+    "primaryPlatforms": ["<list 3-5 specific platforms for this profile in Brazil — e.g.: Gupy for tech/corporative, Catho for traditional industry, LinkedIn for executive, Vagas.com.br for logistics>"],
+    "searchTerms": ["<5-8 exact search terms the candidate should use on platforms and Google — use the role's exact market terminology>"],
+    "companyTargets": ["<4-6 real Brazilian companies or multinationals operating in Brazil that actively hire this profile — be specific>"],
+    "approachTips": ["<3 specific, personalized tips for how THIS candidate should approach recruiters on LinkedIn — based on their profile and target role>"],
+    "urgencyLevel": "<alta | média | baixa — based on: market demand for this profile, how competitive the field is, and any red flags like long gap>"
   }
 }`;
 
