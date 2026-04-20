@@ -113,6 +113,106 @@ const SKILL_ONTOLOGY: Record<string, string[]> = {
   "negociação": ["negotiation", "negociation"],
   "gestão de projetos": ["project management", "gerenciamento de projetos", "pm"],
   "planejamento estratégico": ["strategic planning", "planejamento"],
+
+  // ── SAÚDE / FARMÁCIA / BIOTECH ──────────────────────────────────────────────
+  "anvisa": ["agência nacional de vigilância sanitária", "regulatório anvisa", "registro anvisa"],
+  "boas práticas de fabricação": ["bpf", "gmp", "good manufacturing practice", "bpf/bpc"],
+  "farmácia hospitalar": ["farmacêutico hospitalar", "farmacêutico clínico", "farmácia clínica"],
+  "gestão de qualidade": ["quality management", "gq", "qualidade", "gestão da qualidade"],
+  "iso 9001": ["iso9001", "norma iso 9001", "certificação iso"],
+  "iso 13485": ["dispositivos médicos", "medical devices", "iso13485"],
+  "farmacovigilância": ["pharmacovigilance", "pv", "segurança de medicamentos"],
+  "ensaios clínicos": ["clinical trials", "pesquisa clínica", "protocolo clínico"],
+  "hemodinâmica": ["hemodinâmica", "cateterismo", "intervenção cardiovascular"],
+  "enfermagem": ["técnico de enfermagem", "enfermeiro", "coren"],
+  "prontuário eletrônico": ["pep", "prontuário do paciente", "tasy", "soul mv", "ehr"],
+
+  // ── LOGÍSTICA / SUPPLY CHAIN ────────────────────────────────────────────────
+  "gestão de estoque": ["inventory management", "controle de estoque", "wms", "warehouse management"],
+  "supply chain": ["cadeia de suprimentos", "supply chain management", "scm", "gestão da cadeia"],
+  "logística reversa": ["reverse logistics", "logística de devolução", "pós-venda logística"],
+  "gestão de transportes": ["tms", "transportation management", "frete", "gestão de frotas"],
+  "lean manufacturing": ["lean", "manufatura enxuta", "toyota production system", "tps"],
+  "six sigma": ["6 sigma", "seis sigma", "dmaic", "dmadv", "black belt", "green belt"],
+  "armazenagem": ["warehouse", "armazém", "almoxarifado", "cross-docking"],
+  "sap mm": ["sap materials management", "sap compras", "módulo mm"],
+  "sap wm": ["sap warehouse management", "sap ewm", "módulo wm"],
+  "erp": ["enterprise resource planning", "totvs", "protheus", "sap", "oracle", "sankhya", "senior sistemas"],
+  "importação": ["comércio exterior", "import", "siscomex", "drawback", "radar"],
+  "exportação": ["export", "comex", "ncm", "incoterms", "câmbio"],
+  "planejamento de demanda": ["demand planning", "s&op", "sales and operations planning"],
+
+  // ── FINANÇAS / CONTABILIDADE / CONTROLADORIA ────────────────────────────────
+  "contabilidade": ["ciências contábeis", "contador", "contábil", "crc"],
+  "controladoria": ["controller", "controlling", "controle de gestão"],
+  "conciliação contábil": ["reconciliação contábil", "account reconciliation", "conciliação bancária"],
+  "fiscal": ["tributário", "tributação", "sped fiscal", "sped contábil", "obrigações acessórias"],
+  "auditoria": ["audit", "auditoria interna", "auditoria externa", "sox", "auditoria independente"],
+  "planejamento financeiro": ["fp&a", "financial planning", "orçamento", "budget", "forecast"],
+  "fluxo de caixa": ["cash flow", "gestão de caixa", "tesouraria", "treasury"],
+  "contas a pagar": ["accounts payable", "ap", "pagamentos"],
+  "contas a receber": ["accounts receivable", "ar", "cobranças", "crédito e cobrança"],
+  "ifrs": ["international financial reporting standards", "cpc", "normas contábeis"],
+  "due diligence": ["dd", "auditoria de aquisição", "m&a", "fusões e aquisições"],
+  "cpa 20": ["cpa-20", "anbima cpa20", "certificação cpa-20"],
+  "cpa 10": ["cpa-10", "anbima cpa10", "certificação cpa-10"],
+  "cea": ["certificação de especialista em investimentos", "anbima cea"],
+  "análise de crédito": ["credit analysis", "risco de crédito", "concessão de crédito"],
+  "gestão de riscos": ["risk management", "gestão de risco", "controles internos"],
+
+  // ── JURÍDICO / COMPLIANCE ───────────────────────────────────────────────────
+  "compliance": ["conformidade", "compliance officer", "programa de integridade"],
+  "contratos": ["gestão de contratos", "contract management", "elaboração de contratos", "análise contratual"],
+  "lgpd": ["lei geral de proteção de dados", "privacidade de dados", "gdpr", "dpo", "data protection"],
+  "direito trabalhista": ["clt", "trabalhista", "legislação trabalhista", "relações trabalhistas"],
+  "propriedade intelectual": ["patentes", "marcas", "inpi", "direito autoral"],
+  "direito empresarial": ["societário", "direito corporativo", "corporate law"],
+  "licitação": ["licitações", "pregão", "lei 14133", "lei 8666", "contratos públicos"],
+  "antitruste": ["defesa da concorrência", "cade", "antitrust"],
+
+  // ── ENGENHARIA / CONSTRUÇÃO CIVIL ───────────────────────────────────────────
+  "gestão de obras": ["construção civil", "engenheiro de obras", "gerenciamento de obras", "construção"],
+  "autocad": ["auto cad", "cad", "desenho técnico", "desenho auxiliado por computador"],
+  "revit": ["bim", "building information modeling", "modelagem 3d"],
+  "ms project": ["microsoft project", "cronograma de obras", "cronograma físico-financeiro", "primavera"],
+  "normas abnt": ["nbr", "abnt", "normas técnicas", "normas regulamentadoras"],
+  "pcp": ["planejamento e controle de produção", "production planning", "chão de fábrica"],
+  "segurança do trabalho": ["nr", "nr-35", "nr-10", "nr-12", "ssma", "hse", "ehs", "cipa"],
+  "manutenção": ["manutenção industrial", "manutenção preventiva", "manutenção corretiva", "pcm"],
+  "engenharia elétrica": ["sistemas elétricos", "quadros elétricos", "spda", "nr-10"],
+  "engenharia mecânica": ["projetos mecânicos", "solidworks", "catia", "ansys"],
+  "geotecnia": ["mecânica dos solos", "fundações", "sondagem", "geologia"],
+  "orçamento de obras": ["orçamentação", "composição de preços", "sinapi", "tcpo"],
+  "controle de qualidade": ["cq", "inspeção de qualidade", "ensaios", "controle de processos"],
+
+  // ── EDUCAÇÃO / TREINAMENTO ──────────────────────────────────────────────────
+  "design instrucional": ["instrucional design", "instructional design", "di", "conteúdo educacional"],
+  "ead": ["ensino a distância", "e-learning", "lms", "moodle", "blackboard", "canvas"],
+  "treinamento e desenvolvimento": ["t&d", "training and development", "t&d corporativo", "educação corporativa"],
+  "universidade corporativa": ["corporate university", "escola de negócios", "academia corporativa"],
+  "pedagogia": ["pedagogo", "ciências da educação", "educação"],
+  "avaliação de aprendizagem": ["kirkpatrick", "roi de treinamento", "eficácia de treinamento"],
+
+  // ── VAREJO / E-COMMERCE ─────────────────────────────────────────────────────
+  "gestão de categoria": ["category management", "gestão de mix", "buyer", "comprador"],
+  "e-commerce": ["ecommerce", "loja virtual", "marketplace", "shopify", "magento"],
+  "vtex": ["plataforma vtex", "vtex io", "vtex commerce"],
+  "merchandising": ["visual merchandising", "planograma", "exposição de produtos"],
+  "trade marketing": ["trade", "pdv", "ponto de venda", "go-to-market varejo"],
+  "gestão de loja": ["gerente de loja", "gestão de ponto de venda", "store management"],
+
+  // ── AGRONEGÓCIO / AGRO ──────────────────────────────────────────────────────
+  "agronomia": ["engenheiro agrônomo", "ciências agrárias", "agro"],
+  "agricultura de precisão": ["gps agrícola", "sensoriamento remoto", "drones agrícolas", "agricultura 4.0"],
+  "defensivos agrícolas": ["agroquímicos", "fitossanidade", "receituário agronômico"],
+  "gestão rural": ["fazenda", "pecuária", "bovinocultura", "suinocultura", "avicultura"],
+  "irrigação": ["sistemas de irrigação", "pivot central", "gotejamento"],
+
+  // ── SETOR PÚBLICO ───────────────────────────────────────────────────────────
+  "gestão pública": ["administração pública", "serviço público", "políticas públicas"],
+  "orçamento público": ["lei orçamentária anual", "loa", "ldo", "ppa", "siafi"],
+  "pregão eletrônico": ["comprasnet", "bec", "sistema de compras governamentais"],
+  "concurso público": ["aprovado em concurso", "servidão pública", "estatutário"],
 };
 
 // Transferable skill clusters — if candidate has one, they may transfer to related roles
@@ -140,6 +240,43 @@ const TRANSFERABLE_CLUSTERS: Array<{ source: string[]; target: string[] }> = [
   {
     source: ["financial modeling", "valuation", "dcf"],
     target: ["análise financeira", "financial analysis", "corporate finance"],
+  },
+  // ── Novos clusters ───────────────────────────────────────────────────────────
+  {
+    source: ["lean manufacturing", "six sigma", "pcp"],
+    target: ["melhoria contínua", "operational excellence", "eficiência operacional", "kaizen"],
+  },
+  {
+    source: ["supply chain", "gestão de estoque", "gestão de transportes"],
+    target: ["operações", "operations management", "logística integrada"],
+  },
+  {
+    source: ["auditoria", "compliance", "gestão de riscos"],
+    target: ["controles internos", "governança corporativa", "risk management"],
+  },
+  {
+    source: ["contabilidade", "controladoria", "planejamento financeiro"],
+    target: ["finanças corporativas", "gestão financeira", "finance"],
+  },
+  {
+    source: ["contratos", "lgpd", "compliance"],
+    target: ["jurídico empresarial", "assessoria jurídica", "legal"],
+  },
+  {
+    source: ["treinamento e desenvolvimento", "design instrucional", "ead"],
+    target: ["educação corporativa", "people development", "learning & development"],
+  },
+  {
+    source: ["e-commerce", "vtex", "gestão de categoria"],
+    target: ["varejo digital", "digital commerce", "marketplace management"],
+  },
+  {
+    source: ["gestão de obras", "autocad", "ms project"],
+    target: ["gestão de projetos de engenharia", "construção e infraestrutura"],
+  },
+  {
+    source: ["anvisa", "boas práticas de fabricação", "farmácia hospitalar"],
+    target: ["regulatório", "regulatory affairs", "qualidade farmacêutica"],
   },
 ];
 
