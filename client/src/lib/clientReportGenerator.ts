@@ -23,6 +23,8 @@ function esc(s: string) {
 
 function buildHTML(results: AnalysisResult, clientName: string): string {
   const ats       = results.atsScore ?? results.matchScore ?? 0;
+  const vp        = results.valueProposition;
+  const jh        = results.jobhunterStrategy;
   const projected = results.projectedMatchScore ?? 0;
   const gain      = Math.round(projected - ats);
   const color     = scoreColor(ats);
@@ -142,6 +144,22 @@ function buildHTML(results: AnalysisResult, clientName: string): string {
   /* ── Summary ── */
   .summary-box{background:linear-gradient(135deg,#f0f7ff,#e8f2ff);border:1px solid #bfdbfe;border-radius:10px;padding:18px 22px;margin-bottom:20px}
   .summary-box p{font-size:9.5pt;color:#1e3a8a;line-height:1.65}
+
+  /* ── Value Proposition ── */
+  .vp-box{background:#f5f3ff;border:1px solid #ddd6fe;border-left:4px solid #7c3aed;border-radius:0 8px 8px 0;padding:16px 18px;margin-bottom:10px;page-break-inside:avoid}
+  .vp-label{font-size:7.5pt;font-weight:700;color:#6d28d9;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px}
+  .vp-current{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;font-size:8.5pt;color:#64748b;font-style:italic;line-height:1.5;margin-bottom:8px}
+  .vp-improved{background:#f5f3ff;border:1px solid #c4b5fd;border-radius:6px;padding:10px 12px;font-size:9pt;color:#4c1d95;font-weight:600;line-height:1.55}
+  .vp-score{display:inline-block;padding:3px 10px;border-radius:20px;font-size:8pt;font-weight:700;margin-bottom:8px}
+  .vp-gap{font-size:8pt;color:#92400e;padding:3px 0;border-bottom:1px solid #fef3c7}
+  /* ── Jobhunter Strategy ── */
+  .jh-platform{display:inline-block;padding:3px 10px;border-radius:20px;background:#dbeafe;color:#1e40af;font-size:8pt;font-weight:600;margin:2px}
+  .jh-term{display:inline-block;padding:3px 10px;border-radius:20px;background:#f1f5f9;color:#334155;font-size:7.5pt;font-family:monospace;border:1px solid #e2e8f0;margin:2px}
+  .jh-company{display:inline-block;padding:3px 10px;border-radius:20px;background:#dcfce7;color:#166534;font-size:8pt;font-weight:500;border:1px solid #bbf7d0;margin:2px}
+  .jh-tip{font-size:8.5pt;color:#334155;padding:8px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;line-height:1.5}
+  .urgency-alta{background:#fee2e2;color:#991b1b;padding:4px 12px;border-radius:20px;font-size:8pt;font-weight:700}
+  .urgency-média{background:#fef3c7;color:#92400e;padding:4px 12px;border-radius:20px;font-size:8pt;font-weight:700}
+  .urgency-baixa{background:#dcfce7;color:#166534;padding:4px 12px;border-radius:20px;font-size:8pt;font-weight:700}
 
   @media print{html,body{background:#fff!important}.cover{page-break-after:always!important}.page{page-break-after:always!important}}
   @media screen{body{background:#94a3b8;padding:20px}.cover,.page{box-shadow:0 4px 32px rgba(0,0,0,.2);margin-bottom:20px}.page{min-height:auto}}
@@ -322,7 +340,41 @@ function buildHTML(results: AnalysisResult, clientName: string): string {
   </div>
 </div>
 
-<!-- ════════ PÁG 5: SALÁRIO + RECRUTADOR + PRÓXIMOS PASSOS ════════ -->
+<!-- ════════ PÁG 5: PROPOSTA DE VALOR + ESTRATÉGIA ════════ -->
+<div class="page">
+
+  ${vp ? `
+  <div class="section">
+    <div class="section-title">Proposta de valor profissional</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+      <span class="vp-score" style="background:${vp.score>=70?'#dcfce7':vp.score>=40?'#fef3c7':'#fee2e2'};color:${vp.score>=70?'#166534':vp.score>=40?'#92400e':'#991b1b'}">Score: ${vp.score}/100</span>
+      ${!vp.isInTopThird ? '<span style="font-size:8pt;color:#92400e;background:#fef3c7;padding:3px 10px;border-radius:20px;border:1px solid #fde68a">⚠ Não está no terço superior do CV</span>' : '<span style="font-size:8pt;color:#166534;background:#dcfce7;padding:3px 10px;border-radius:20px;border:1px solid #bbf7d0">✓ Posicionada corretamente</span>'}
+    </div>
+    ${vp.currentStatement ? `<div class="vp-label">O que o CV comunica hoje</div><div class="vp-current">"${esc(vp.currentStatement)}"</div>` : ""}
+    ${vp.improvedStatement ? `<div class="vp-label" style="color:#7c3aed">Proposta de valor ideal (sugestão)</div><div class="vp-improved">"${esc(vp.improvedStatement)}"</div>` : ""}
+    ${vp.gaps?.length ? `<div class="vp-label" style="margin-top:10px;color:#b45309">Gaps identificados</div>${vp.gaps.map(g=>`<div class="vp-gap">${esc(g)}</div>`).join("")}` : ""}
+  </div>` : ""}
+
+  ${jh ? `
+  <div class="section">
+    <div class="section-title">Estratégia de busca de emprego</div>
+    <div style="margin-bottom:10px">
+      <span class="${jh.urgencyLevel==="alta"?"urgency-alta":jh.urgencyLevel==="média"?"urgency-média":"urgency-baixa"}">Urgência: ${jh.urgencyLevel}</span>
+    </div>
+    ${jh.primaryPlatforms?.length ? `<div class="vp-label">Plataformas prioritárias</div><div style="margin-bottom:10px">${jh.primaryPlatforms.map(p=>`<span class="jh-platform">${esc(p)}</span>`).join("")}</div>` : ""}
+    ${jh.searchTerms?.length ? `<div class="vp-label">Termos de busca exatos</div><div style="margin-bottom:10px">${jh.searchTerms.map(t=>`<span class="jh-term">"${esc(t)}"</span>`).join("")}</div>` : ""}
+    ${jh.companyTargets?.length ? `<div class="vp-label">Empresas que contratam este perfil</div><div style="margin-bottom:10px">${jh.companyTargets.map(c=>`<span class="jh-company">${esc(c)}</span>`).join("")}</div>` : ""}
+    ${jh.approachTips?.length ? `<div class="vp-label">Como abordar recrutadores</div>${jh.approachTips.map((t,i)=>`<div class="jh-tip"><strong>${i+1}.</strong> ${esc(t)}</div>`).join("")}` : ""}
+  </div>` : ""}
+
+  <div class="page-footer">
+    <strong>Leone Consultoria de Carreira</strong>
+    <span>${esc(clientName)} · ${today()}</span>
+    <span>Página 5</span>
+  </div>
+</div>
+
+<!-- ════════ PÁG 6: SALÁRIO + RECRUTADOR + PRÓXIMOS PASSOS ════════ -->
 <div class="page">
   ${hasSalary ? `
   <div class="section">
@@ -360,10 +412,13 @@ function buildHTML(results: AnalysisResult, clientName: string): string {
     <div class="section-title">Próximos passos recomendados</div>
     <ul class="check-list step-list">
       <li>Substituir o CV actual pelo CV optimizado entregue em anexo</li>
-      <li>Atualizar a headline do LinkedIn com o texto sugerido na página anterior</li>
+      <li>Atualizar a headline do LinkedIn com o texto sugerido na Pág. 4</li>
       <li>Copiar o novo resumo "About" para o perfil LinkedIn</li>
       <li>Adicionar as ${results.linkedinOptimization?.skillsToAdd?.length ?? 0} skills sugeridas e solicitar endorsements</li>
       ${results.missingKeywords?.length ? `<li>Incorporar no CV e LinkedIn: <strong>${results.missingKeywords.slice(0,4).map(esc).join(", ")}</strong></li>` : ""}
+      ${jh?.primaryPlatforms?.length ? `<li>Iniciar busca ativa nas plataformas: <strong>${jh.primaryPlatforms.slice(0,3).map(esc).join(", ")}</strong></li>` : ""}
+      ${jh?.searchTerms?.length ? `<li>Usar os termos de busca: <strong>${jh.searchTerms.slice(0,3).map(t=>`"${esc(t)}"`).join(", ")}</strong></li>` : ""}
+      <li>Verificar SSI em linkedin.com/sales/ssi — meta mínima de 60 pontos</li>
       <li>Solicitar recomendações de ex-gestores e colegas no LinkedIn</li>
     </ul>
   </div>
@@ -380,7 +435,7 @@ function buildHTML(results: AnalysisResult, clientName: string): string {
   <div class="page-footer">
     <strong>Leone Consultoria de Carreira</strong>
     <span>Relatório confidencial — ${esc(clientName)}</span>
-    <span>${today()}</span>
+    <span>Página 6</span>
   </div>
 </div>
 
