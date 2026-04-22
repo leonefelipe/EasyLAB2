@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
-import { invokeLLM } from "./_core/llm";
+import { invokeLLM, parseJsonWithRepair } from "./_core/llm";
 
 const TranslationResultSchema = z.object({
   translatedResume: z.string(),
@@ -108,8 +108,9 @@ Return JSON:
 
       let parsed: unknown;
       try {
-        parsed = JSON.parse(content);
-      } catch {
+        parsed = await parseJsonWithRepair(content);
+      } catch (err) {
+        console.error("[translate.toEnglish] JSON parse + repair failed:", err);
         throw new Error("Error processing AI response. Please try again.");
       }
 
