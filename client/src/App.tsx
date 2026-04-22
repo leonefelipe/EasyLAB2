@@ -7,13 +7,15 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import LinkedInPage from "./pages/LinkedInPage";
 import ClientDashboard from "./pages/ClientDashboard";
+import PremiumReportPage from "./pages/PremiumReportPage";
 
 function Router() {
   return (
     <Switch>
-      {/* CRM dashboard is the default entry point for the internal tool */}
-      <Route path={"/"} component={ClientDashboard} />
+      <Route path={"/"} component={PremiumReportPage} />
+      <Route path={"/premium"} component={PremiumReportPage} />
       <Route path={"/clients"} component={ClientDashboard} />
+      <Route path={"/dashboard"} component={ClientDashboard} />
       <Route path={"/analysis"} component={Home} />
       <Route path={"/linkedin"} component={LinkedInPage} />
       <Route path={"/404"} component={NotFound} />

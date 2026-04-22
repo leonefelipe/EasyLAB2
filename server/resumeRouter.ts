@@ -120,19 +120,49 @@ async function scrapeJobUrl(url: string): Promise<string | null> {
     // LinkedIn blocks server-side scraping — skip immediately
     if (urlObj.hostname.includes("linkedin.com")) return null;
 
+    // FIX: Inhire tem proteção anti-bot no HTML, mas expõe API pública JSON
+    if (urlObj.hostname.includes("inhire.app")) {
+      const inhireResult = await scrapeInhireJob(url);
+      if (inhireResult) return inhireResult;
+    }
+
     const response = await fetch(url, {
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+        Referer: "https://www.google.com/",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
       },
-      signal: AbortSignal.timeout(7000),
+      redirect: "follow",
+      signal: AbortSignal.timeout(10000),
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.warn(`[scrapeJobUrl] HTTP ${response.status} for ${url}`);
+      return null;
+    }
 
     const html = await response.text();
+
+    // Detecta Cloudflare / bot challenge
+    if (
+      html.length < 4000 ||
+      html.includes("cf-browser-verification") ||
+      html.includes("challenge-form") ||
+      html.includes("Just a moment")
+    ) {
+      console.warn(`[scrapeJobUrl] Bot challenge detected for ${url}`);
+      return null;
+    }
+
     const cleaned = html
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -149,7 +179,45 @@ async function scrapeJobUrl(url: string): Promise<string | null> {
       .replace(/\s{2,}/g, " ")
       .trim();
 
-    return cleaned.slice(0, 7000);
+    return cleaned.length > 300 ? cleaned.slice(0, 7000) : null;
+  } catch (err) {
+    console.warn(`[scrapeJobUrl] Error: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+// FIX: Inhire expõe API pública em api.inhire.com.br
+async function scrapeInhireJob(url: string): Promise<string | null> {
+  try {
+    const match = url.match(/\/vagas\/([a-f0-9-]{36})/i);
+    if (!match) return null;
+    const jobId = match[1];
+    const subdomain = new URL(url).hostname.split(".")[0];
+
+    const candidates = [
+      `https://api.inhire.com.br/public/companies/${subdomain}/jobs/${jobId}`,
+      `https://api.inhire.app/public/companies/${subdomain}/jobs/${jobId}`,
+      `https://${subdomain}.inhire.app/api/public/jobs/${jobId}`,
+    ];
+
+    for (const apiUrl of candidates) {
+      try {
+        const res = await fetch(apiUrl, {
+          headers: { Accept: "application/json", "User-Agent": "EasyLAB2/1.0" },
+          signal: AbortSignal.timeout(7000),
+        });
+        if (!res.ok) continue;
+        const data = (await res.json()) as Record<string, unknown>;
+        const parts = [
+          data.title, data.description, data.requirements,
+          data.responsibilities, data.benefits, data.seniority, data.location,
+        ]
+          .filter(v => typeof v === "string" && (v as string).length > 0)
+          .join("\n\n");
+        if (parts.length > 200) return parts.slice(0, 7000);
+      } catch { /* próximo */ }
+    }
+    return null;
   } catch {
     return null;
   }

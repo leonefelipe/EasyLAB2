@@ -1,9 +1,20 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+/* ─── Leone Berto Consultoria — Fontes conforme Brand Book oficial v2 ──────
+   Serif (Títulos/Display):  Cinzel / Cormorant Garamond  (equivalente web free ao Trajan Pro)
+   Sans-serif (Corpo):       Open Sans / Lato             (conforme brand book)
+──────────────────────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Cormorant+Garamond:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&family=Lato:wght@400;700;900&display=swap');
 
 @custom-variant dark (&:is(.dark *));
+
+/* ─── Brand Tokens Oficiais — Brand Book v2 ──────────────────────────────────
+   
+   Azul Marinho Profundo  #1B2F4A   — fundos, textos primários, confiança/autoridade
+   Dourado Elegante       #C8A15E   — detalhes, destaques, luxo (usar com moderação)
+   Branco Puro            #FFFFFF   — fundos, espaços em branco, leveza/clareza
+──────────────────────────────────────────────────────────────────────────── */
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
@@ -42,91 +53,132 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Brand utilities — use: bg-brand-navy, text-brand-gold, etc */
+  --color-brand-navy:  #1B2F4A;
+  --color-brand-gold:  #C8A15E;
+  --color-brand-white: #FFFFFF;
 }
 
+/* ─── Light Mode ─────────────────────────────────────────────────────────── */
 :root {
-  --primary: #1e3a8a;
-  --primary-foreground: #f0f9ff;
-  --sidebar-primary: #1e40af;
-  --sidebar-primary-foreground: #f0f9ff;
-  --chart-1: #93c5fd;
-  --chart-2: #3b82f6;
-  --chart-3: #1d4ed8;
-  --chart-4: #1e3a8a;
-  --chart-5: #1e40af;
-  --accent: #10b981;
-  --accent-foreground: #ffffff;
-  --radius: 0.5rem;
-  --background: #ffffff;
-  --foreground: #1f2937;
-  --card: #ffffff;
-  --card-foreground: #1f2937;
-  --popover: #ffffff;
-  --popover-foreground: #1f2937;
-  --secondary: #f3f4f6;
-  --secondary-foreground: #4b5563;
-  --muted: #e5e7eb;
-  --muted-foreground: #6b7280;
-  --destructive: #ef4444;
-  --destructive-foreground: #ffffff;
-  --border: #e5e7eb;
-  --input: #f3f4f6;
-  --ring: #1e3a8a;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #1f2937;
-  --sidebar-accent: #f3f4f6;
-  --sidebar-accent-foreground: #1e3a8a;
-  --sidebar-border: #e5e7eb;
-  --sidebar-ring: #1e3a8a;
+  --primary:            #1B2F4A;
+  --primary-foreground: #FFFFFF;
+
+  --accent:             #C8A15E;
+  --accent-foreground:  #1B2F4A;
+
+  --sidebar:                        #1B2F4A;
+  --sidebar-foreground:             #FFFFFF;
+  --sidebar-primary:                #C8A15E;
+  --sidebar-primary-foreground:     #1B2F4A;
+  --sidebar-accent:                 #2A4261;
+  --sidebar-accent-foreground:      #FFFFFF;
+  --sidebar-border:                 rgba(200, 161, 94, 0.22);
+  --sidebar-ring:                   #C8A15E;
+
+  --chart-1: #C8A15E;
+  --chart-2: #D4B278;
+  --chart-3: #1B2F4A;
+  --chart-4: #2A4261;
+  --chart-5: #3A5273;
+
+  --radius:     0.5rem;
+  --background: #FFFFFF;
+  --foreground: #1B2F4A;
+
+  --card:             #FFFFFF;
+  --card-foreground:  #1B2F4A;
+
+  --popover:            #FFFFFF;
+  --popover-foreground: #1B2F4A;
+
+  --secondary:            #F5F1EB;
+  --secondary-foreground: #1B2F4A;
+
+  --muted:            #EEE8DE;
+  --muted-foreground: #5C4F3A;
+
+  --destructive:            #B91C1C;
+  --destructive-foreground: #FFFFFF;
+
+  --border: #E3DCCF;
+  --input:  #F5F1EB;
+  --ring:   #C8A15E;
 }
 
+/* ─── Dark Mode ──────────────────────────────────────────────────────────── */
 .dark {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-500);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.85 0.005 65);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.85 0.005 65);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.85 0.005 65);
-  --secondary: oklch(0.24 0.006 286.033);
-  --secondary-foreground: oklch(0.7 0.005 65);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground:  oklch(0.92 0.005 65);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.488 0.243 264.376);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
-  --sidebar: oklch(0.21 0.006 285.885);
-  --sidebar-foreground: oklch(0.85 0.005 65);
-  --sidebar-accent: oklch(0.274 0.006 286.033);
-  --sidebar-accent-foreground:  oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.488 0.243 264.376);
+  --primary:            #C8A15E;
+  --primary-foreground: #1B2F4A;
+
+  --accent:             #D4B278;
+  --accent-foreground:  #1B2F4A;
+
+  --background: #0F1E33;
+  --foreground: #F5F1EB;
+
+  --card:            #1B2F4A;
+  --card-foreground: #F5F1EB;
+
+  --popover:            #1B2F4A;
+  --popover-foreground: #F5F1EB;
+
+  --secondary:            #2A4261;
+  --secondary-foreground: #D4B278;
+
+  --muted:            #2A4261;
+  --muted-foreground: #A0ADBA;
+
+  --destructive:            #EF4444;
+  --destructive-foreground: #FFFFFF;
+
+  --border: rgba(200, 161, 94, 0.2);
+  --input:  #2A4261;
+  --ring:   #C8A15E;
+
+  --sidebar:                    #0F1E33;
+  --sidebar-foreground:         #F5F1EB;
+  --sidebar-primary:            #C8A15E;
+  --sidebar-primary-foreground: #1B2F4A;
+  --sidebar-accent:             #1B2F4A;
+  --sidebar-accent-foreground:  #F5F1EB;
+  --sidebar-border:             rgba(200, 161, 94, 0.15);
+  --sidebar-ring:               #C8A15E;
+
+  --chart-1: #D4B278;
+  --chart-2: #C8A15E;
+  --chart-3: #9A7A43;
+  --chart-4: #3A5273;
+  --chart-5: #2A4261;
 }
 
+/* ─── Base Layer ─────────────────────────────────────────────────────────── */
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
-    @apply bg-background text-foreground font-sans;
-    font-family: 'Inter', sans-serif;
+    @apply bg-background text-foreground;
+    font-family: 'Open Sans', 'Lato', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-  h1, h2, h3, h4, h5, h6 {
-    font-family: 'Geist', sans-serif;
+
+  h1, h2, h3 {
+    font-family: 'Cinzel', 'Cormorant Garamond', Georgia, serif;
+    font-weight: 600;
+    color: var(--foreground);
+    letter-spacing: 0.02em;
+  }
+
+  h4, h5, h6 {
+    font-family: 'Open Sans', 'Lato', sans-serif;
     font-weight: 700;
+    color: var(--foreground);
   }
+
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
   [type="button"]:not(:disabled),
@@ -140,25 +192,13 @@
   }
 }
 
+/* ─── Components ─────────────────────────────────────────────────────────── */
 @layer components {
-  /**
-   * Custom container utility that centers content and adds responsive padding.
-   *
-   * This overrides Tailwind's default container behavior to:
-   * - Auto-center content (mx-auto)
-   * - Add responsive horizontal padding
-   * - Set max-width for large screens
-   *
-   * Usage: <div className="container">...</div>
-   *
-   * For custom widths, use max-w-* utilities directly:
-   * <div className="max-w-6xl mx-auto px-4">...</div>
-   */
   .container {
     width: 100%;
     margin-left: auto;
     margin-right: auto;
-    padding-left: 1rem; /* 16px - mobile padding */
+    padding-left: 1rem;
     padding-right: 1rem;
   }
 
@@ -168,17 +208,112 @@
   }
 
   @media (min-width: 640px) {
-    .container {
-      padding-left: 1.5rem; /* 24px - tablet padding */
-      padding-right: 1.5rem;
-    }
+    .container { padding-left: 1.5rem; padding-right: 1.5rem; }
   }
 
   @media (min-width: 1024px) {
-    .container {
-      padding-left: 2rem; /* 32px - desktop padding */
-      padding-right: 2rem;
-      max-width: 1280px; /* Standard content width */
-    }
+    .container { padding-left: 2rem; padding-right: 2rem; max-width: 1280px; }
+  }
+
+  .lb-gold-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: #C8A15E;
+    font-family: 'Open Sans', sans-serif;
+    font-size: 0.7rem;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  .lb-gold-divider::before,
+  .lb-gold-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #C8A15E;
+    opacity: 0.65;
+  }
+
+  .lb-score-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #1B2F4A;
+    color: #C8A15E;
+    font-family: 'Cinzel', serif;
+    font-weight: 700;
+    border-radius: 50%;
+    border: 2px solid #C8A15E;
+  }
+
+  .lb-card {
+    background: #FFFFFF;
+    border: 1px solid #E3DCCF;
+    border-left: 3px solid #C8A15E;
+    border-radius: 0.5rem;
+    padding: 1.25rem 1.5rem;
+  }
+
+  .dark .lb-card {
+    background: #1B2F4A;
+    border-color: rgba(200, 161, 94, 0.3);
+    border-left-color: #C8A15E;
+  }
+
+  .lb-header {
+    background: #1B2F4A;
+    border-bottom: 2px solid #C8A15E;
+    padding: 0.75rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .lb-consultoria-text {
+    font-family: 'Open Sans', sans-serif;
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: #C8A15E;
+  }
+
+  .lb-brand-name {
+    font-family: 'Cinzel', 'Cormorant Garamond', Georgia, serif;
+    font-weight: 600;
+    color: #1B2F4A;
+    letter-spacing: 0.04em;
+  }
+
+  .dark .lb-brand-name {
+    color: #FFFFFF;
+  }
+
+  .lb-btn-primary {
+    background: #1B2F4A;
+    color: #FFFFFF;
+    font-family: 'Open Sans', sans-serif;
+    font-weight: 600;
+    padding: 0.625rem 1.5rem;
+    border-radius: 0.5rem;
+    transition: all 0.2s;
+  }
+  .lb-btn-primary:hover {
+    background: #2A4261;
+    box-shadow: 0 0 0 2px rgba(200, 161, 94, 0.3);
+  }
+
+  .lb-btn-gold {
+    background: #C8A15E;
+    color: #1B2F4A;
+    font-family: 'Open Sans', sans-serif;
+    font-weight: 700;
+    padding: 0.625rem 1.5rem;
+    border-radius: 0.5rem;
+    transition: all 0.2s;
+  }
+  .lb-btn-gold:hover {
+    background: #D4B278;
   }
 }

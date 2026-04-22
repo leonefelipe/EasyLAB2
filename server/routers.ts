@@ -6,16 +6,8 @@ import { translateRouter } from "./translateRouter";
 import { jobsRouter } from "./jobsRouter";
 import { linkedinRouter } from "./linkedInRouter";
 import { jobExtractorRouter } from "./jobExtractorRouter";
+import { premiumReportRouter } from "./premiumReportRouter";
 
-/**
- * Root tRPC router — EasyLAB2 v2.
- *
- * Auth (cookies de sessão + OAuth Manus) foi removido na Fase 0.
- * Quando introduzirmos auth real, voltará como router próprio.
- *
- * Na Fase 1 adiciona-se: clientsRouter, projectsRouter, analysesRouter
- * para migrar o CRM do localStorage para MySQL.
- */
 export const appRouter = router({
   system: systemRouter,
   resume: resumeRouter,
@@ -24,6 +16,7 @@ export const appRouter = router({
   jobs: jobsRouter,
   linkedin: linkedinRouter,
   jobExtractor: jobExtractorRouter,
+  premiumReport: premiumReportRouter,
 });
 
 export type AppRouter = typeof appRouter;

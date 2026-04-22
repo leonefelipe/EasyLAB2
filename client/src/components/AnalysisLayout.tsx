@@ -961,7 +961,7 @@ export default function AnalysisLayout({ isDarkMode }: Props) {
           <label className={`text-xs font-semibold uppercase tracking-wide mb-1.5 block ${dk ? "text-slate-400" : "text-slate-500"}`}>
             Currículo
           </label>
-          <input type="file" accept=".pdf,.docx,.txt" onChange={handleUpload} className="hidden" id="cv-upload" />
+          <input type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" onChange={handleUpload} className="hidden" id="cv-upload" />
           <label htmlFor="cv-upload"
             className={`flex items-center gap-3 p-3 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
               resumeText

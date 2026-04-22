@@ -11,9 +11,10 @@
  */
 
 import * as pdfjsLib from "pdfjs-dist";
+// FIX: pdfjs 5.x → worker é .mjs bundled via Vite (removido CDN que dava 404)
+import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 // ─── PDF ─────────────────────────────────────────────────────────────────────
 

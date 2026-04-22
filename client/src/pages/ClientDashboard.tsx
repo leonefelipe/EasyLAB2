@@ -665,7 +665,7 @@ function AnalysisPanel({ client, project, onBack, onComplete }: {
 
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Currículo</label>
-            <input type="file" accept=".pdf,.docx,.txt" onChange={handleUpload} className="hidden" id="ap-cv-upload" />
+            <input type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" onChange={handleUpload} className="hidden" id="ap-cv-upload" />
             <label htmlFor="ap-cv-upload" className={`flex items-center gap-3 p-4 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${resumeText ? "border-green-300 bg-green-50" : "border-slate-300 hover:border-blue-400 bg-slate-50"}`}>
               {isExtracting ? <Loader2 className="w-5 h-5 text-blue-500 animate-spin" /> : resumeText ? <CheckCircle className="w-5 h-5 text-green-500" /> : <Upload className="w-5 h-5 text-slate-400" />}
               <div>
