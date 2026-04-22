@@ -8,7 +8,10 @@
  *   2 — Score ATS + Análise detalhada
  *   3 — Keywords + Gaps + Alterações no CV
  *   4 — LinkedIn Optimization
- *   5 — Salário + Perfil do Recrutador + Próximos Passos
+ *   5 — Proposta de valor + Estratégia de jobhunting
+ *   6 — Salário + Perfil do Recrutador + Próximos Passos
+ *
+ * Phase A (A4): emojis/glifos decorativos substituídos por CSS badges + shapes puros.
  */
 
 import type { AnalysisResult } from "@/components/AnalysisLayout";
@@ -104,12 +107,12 @@ function buildHTML(results: AnalysisResult, clientName: string): string {
   .tag-miss{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
   .tag-li{background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe}
 
-  /* ── Lists ── */
+  /* ── Lists (Phase A / A4: pure CSS shapes replace unicode glyphs ✓ ⚠ →) ── */
   .check-list{list-style:none}
   .check-list li{font-size:9pt;color:#334155;padding:4px 0 4px 18px;border-bottom:1px solid #f1f5f9;position:relative;line-height:1.5}
-  .check-list li::before{content:'✓';position:absolute;left:0;color:#16a34a;font-weight:700}
-  .risk-list li::before{content:'⚠';color:#d97706}
-  .step-list li::before{content:'→';color:#1e3a8a}
+  .check-list li::before{content:'';position:absolute;left:2px;top:10px;width:8px;height:8px;border-radius:50%;background:#16a34a}
+  .risk-list li::before{content:'';background:#d97706;border-radius:2px}
+  .step-list li::before{content:'';background:#1e3a8a;border-radius:50%;height:2px;width:10px;top:13px;left:2px}
 
   /* ── Two-col ── */
   .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -152,6 +155,7 @@ function buildHTML(results: AnalysisResult, clientName: string): string {
   .vp-improved{background:#f5f3ff;border:1px solid #c4b5fd;border-radius:6px;padding:10px 12px;font-size:9pt;color:#4c1d95;font-weight:600;line-height:1.55}
   .vp-score{display:inline-block;padding:3px 10px;border-radius:20px;font-size:8pt;font-weight:700;margin-bottom:8px}
   .vp-gap{font-size:8pt;color:#92400e;padding:3px 0;border-bottom:1px solid #fef3c7}
+
   /* ── Jobhunter Strategy ── */
   .jh-platform{display:inline-block;padding:3px 10px;border-radius:20px;background:#dbeafe;color:#1e40af;font-size:8pt;font-weight:600;margin:2px}
   .jh-term{display:inline-block;padding:3px 10px;border-radius:20px;background:#f1f5f9;color:#334155;font-size:7.5pt;font-family:monospace;border:1px solid #e2e8f0;margin:2px}
@@ -160,6 +164,14 @@ function buildHTML(results: AnalysisResult, clientName: string): string {
   .urgency-alta{background:#fee2e2;color:#991b1b;padding:4px 12px;border-radius:20px;font-size:8pt;font-weight:700}
   .urgency-média{background:#fef3c7;color:#92400e;padding:4px 12px;border-radius:20px;font-size:8pt;font-weight:700}
   .urgency-baixa{background:#dcfce7;color:#166534;padding:4px 12px;border-radius:20px;font-size:8pt;font-weight:700}
+
+  /* ── Badges (Phase A — A4: reusable chip replacing inline emoji/symbol spans) ── */
+  .badge{display:inline-block;font-size:8pt;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid transparent;line-height:1.2;letter-spacing:.2px}
+  .badge-success{background:#dcfce7;color:#166534;border-color:#bbf7d0}
+  .badge-warning{background:#fef3c7;color:#92400e;border-color:#fde68a}
+  .badge-danger{background:#fee2e2;color:#991b1b;border-color:#fecaca}
+  .badge-info{background:#dbeafe;color:#1e40af;border-color:#bfdbfe}
+  .badge-neutral{background:#f1f5f9;color:#475569;border-color:#e2e8f0}
 
   @media print{html,body{background:#fff!important}.cover{page-break-after:always!important}.page{page-break-after:always!important}}
   @media screen{body{background:#94a3b8;padding:20px}.cover,.page{box-shadow:0 4px 32px rgba(0,0,0,.2);margin-bottom:20px}.page{min-height:auto}}
@@ -183,7 +195,7 @@ function buildHTML(results: AnalysisResult, clientName: string): string {
       <div>
         <div class="score-meta-label">Score ATS atual</div>
         <div class="score-meta-verdict">${label}</div>
-        ${gain > 0 ? `<div class="score-meta-gain">↑ Projetado: ${Math.round(projected)} (+${gain} pts)</div>` : ""}
+        ${gain > 0 ? `<div class="score-meta-gain">Projetado: ${Math.round(projected)} (+${gain} pts)</div>` : ""}
       </div>
     </div>
   </div>
@@ -300,13 +312,13 @@ function buildHTML(results: AnalysisResult, clientName: string): string {
 
   ${li?.headline ? `
   <div class="li-headline">
-    <div class="li-headline-label">📌 Headline sugerida (copiar e colar no LinkedIn)</div>
+    <div class="li-headline-label">Headline sugerida (copiar e colar no LinkedIn)</div>
     <div class="li-headline-text">${esc(li.headline)}</div>
   </div>` : ""}
 
   ${li?.about ? `
   <div class="li-about">
-    <div class="li-about-label">📝 Resumo / About — Secção completa</div>
+    <div class="li-about-label">Resumo / About — Secção completa</div>
     <div class="li-about-text">${esc(li.about)}</div>
   </div>` : ""}
 
@@ -348,7 +360,7 @@ function buildHTML(results: AnalysisResult, clientName: string): string {
     <div class="section-title">Proposta de valor profissional</div>
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
       <span class="vp-score" style="background:${vp.score>=70?'#dcfce7':vp.score>=40?'#fef3c7':'#fee2e2'};color:${vp.score>=70?'#166534':vp.score>=40?'#92400e':'#991b1b'}">Score: ${vp.score}/100</span>
-      ${!vp.isInTopThird ? '<span style="font-size:8pt;color:#92400e;background:#fef3c7;padding:3px 10px;border-radius:20px;border:1px solid #fde68a">⚠ Não está no terço superior do CV</span>' : '<span style="font-size:8pt;color:#166534;background:#dcfce7;padding:3px 10px;border-radius:20px;border:1px solid #bbf7d0">✓ Posicionada corretamente</span>'}
+      ${!vp.isInTopThird ? '<span class="badge badge-warning">Não está no terço superior do CV</span>' : '<span class="badge badge-success">Posicionada corretamente</span>'}
     </div>
     ${vp.currentStatement ? `<div class="vp-label">O que o CV comunica hoje</div><div class="vp-current">"${esc(vp.currentStatement)}"</div>` : ""}
     ${vp.improvedStatement ? `<div class="vp-label" style="color:#7c3aed">Proposta de valor ideal (sugestão)</div><div class="vp-improved">"${esc(vp.improvedStatement)}"</div>` : ""}
