@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
-import { invokeLLM } from "./_core/llm";
+import { invokeLLM, parseJsonWithRepair } from "./_core/llm";
+import { validateLinkedInCompliance, enforceLinkedInHeadlineLimit } from "./_core/sanitizers";
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ export const linkedinRouter = router({
       }
 
       const targetRoleContext = targetRole
-        ? `\n\nCAR GO / VAGA ALVO DO CANDIDATO: ${targetRole}\nConsidere este contexto para calibrar as sugestões de palavras-chave e visibilidade para recrutadores que buscam este perfil.`
+        ? `\n\nCARGO / VAGA ALVO DO CANDIDATO: ${targetRole}\nConsidere este contexto para calibrar as sugestões de palavras-chave e visibilidade para recrutadores que buscam este perfil.`
         : "";
 
       const systemPrompt = `Você é um especialista sênior em LinkedIn com 15 anos de experiência em Personal Branding, Social Selling e Recrutamento Digital. Você já otimizou mais de 3.000 perfis e conhece profundamente:
@@ -180,6 +181,24 @@ ssiEstimate (0-100): Estimativa do Social Selling Index
 recruiterVisibilityScore (0-100): Probabilidade de aparecer em buscas de recrutadores
 - Baseado em: densidade de keywords no headline e about, completude do perfil, número de conexões estimado
 
+== REGRA ABSOLUTA — PROIBIDO POSICIONAR O CANDIDATO COMO "ABERTO A OPORTUNIDADES" ==
+
+FRASES PROIBIDAS (NUNCA use em headline, about ou qualquer sugestão — variações destas devem ser rejeitadas):
+- "Aberto a oportunidades" / "Aberto a conversas" / "Aberto a novos desafios" / "Aberto a novas propostas"
+- "Open to work" / "Open to opportunities" / "Open to new opportunities" / "Open to new roles"
+- "Buscando recolocação" / "Buscando nova oportunidade" / "Buscando nova colocação"
+- "Em busca de novos desafios" / "Em busca de oportunidades" / "Em busca de recolocação"
+- "Procurando oportunidade" / "Procurando nova colocação"
+- "Disponível para novos desafios" — ou qualquer variação equivalente
+
+CTAs VÁLIDOS para o campo "about.optimized" — sempre em forma de AUTORIDADE, não de disponibilidade:
+- "Converso com líderes de [área] sobre [tema específico]."
+- "Compartilho aprendizados sobre [nicho técnico] com quem está construindo [tipo de empresa]."
+- "Troco ideias sobre [desafio específico] com gestores de [setor]."
+- "Escrevo sobre [tema] e estou à disposição para conversas técnicas com [público-alvo]."
+
+O CTA deve refletir a expertise demonstrada no perfil, não a disponibilidade de trabalho.
+
 == REGRAS ABSOLUTAS ==
 
 1. NUNCA invente informações que não estão no perfil fornecido
@@ -218,13 +237,11 @@ Analise este perfil do LinkedIn com profundidade e retorne um JSON com esta estr
     "<ponto forte 3>"
   ],
   "missingKeywords": [
-    "<keyword importante que está ausente ou subrepresentada>",
-    ...
+    "<keyword importante que está ausente ou subrepresentada>"
   ],
   "recruiterVisibilityScore": <0-100>,
   "recruiterVisibilityTips": [
-    "<dica específica para aparecer mais em buscas de recrutadores>",
-    ...
+    "<dica específica para aparecer mais em buscas de recrutadores>"
   ],
   "quickWins": [
     "<ação de alto impacto e baixo esforço que pode ser feita em menos de 5 minutos>",
@@ -326,18 +343,39 @@ IMPORTANTE:
 
       let parsed: unknown;
       try {
-        parsed = JSON.parse(content);
-      } catch {
+        parsed = await parseJsonWithRepair(content);
+      } catch (err) {
+        console.error("[linkedin.analyze] JSON parse + repair failed:", err);
         throw new Error("Erro ao processar resposta da IA. Tente novamente.");
       }
 
       const validated = LinkedInAnalysisSchema.parse(parsed);
+
+      // ── Phase A (A1): enforce "no open-to-work" rule + 220-char headline cap ──
+      const headlineCheck = validateLinkedInCompliance(validated.headline.optimized);
+      const aboutCheck    = validateLinkedInCompliance(validated.about.optimized);
+      if (headlineCheck.wasStripped || aboutCheck.wasStripped) {
+        console.warn("[linkedin.analyze] LinkedIn compliance: open-to-work phrase stripped", {
+          headlineStripped: headlineCheck.wasStripped,
+          aboutStripped:    aboutCheck.wasStripped,
+        });
+      }
+      const safeOptimizedHeadline = enforceLinkedInHeadlineLimit(headlineCheck.sanitized, 220);
+      const safeOptimizedAbout    = aboutCheck.sanitized;
 
       return {
         ...validated,
         profileStrength: Math.min(100, Math.max(0, validated.profileStrength)),
         ssiEstimate: Math.min(100, Math.max(0, validated.ssiEstimate)),
         recruiterVisibilityScore: Math.min(100, Math.max(0, validated.recruiterVisibilityScore)),
+        headline: {
+          ...validated.headline,
+          optimized: safeOptimizedHeadline,
+        },
+        about: {
+          ...validated.about,
+          optimized: safeOptimizedAbout,
+        },
         scrapedProfile: scrapedSuccessfully,
       };
     }),
