@@ -2,6 +2,7 @@ import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
 import { calculateATSScore, atsResultToPromptContext } from "../core/atsEngine";
+import { ENV } from "./_core/env";
 
 // ─── Zod Schemas ──────────────────────────────────────────────────────────────
 
@@ -1183,218 +1184,24 @@ export const resumeRouter = router({
         }
       }
 
-      // ── Pre-compute ATS score for LLM calibration ────────────────────────────
-      let atsAnchorContext = "";
-      try {
-        const atsResult = calculateATSScore({ cvText: resumeText, jobText: hasJob ? jobContent : resumeText });
-        atsAnchorContext = "\n\n" + atsResultToPromptContext(atsResult);
-      } catch {
-        // non-critical — proceed without anchor
-      }
-
-      const hasTargetPositions = targetPositions.trim().length > 0;
-
-      const jobContext = !hasJob
-        ? "(GENERIC ANALYSIS — no job description provided; evaluate the resume on its own merits: ATS readiness, structure, bullet quality, keyword density, and market competitiveness for the candidate's apparent target role)"
-        : scrapedSuccessfully
-          ? "(content automatically extracted from the job site)"
-          : isUrl(jobUrl.trim())
-            ? "(URL provided — content could not be extracted; analyze based on URL signals and ask candidate to paste full description for best results)"
-            : "(job description provided by candidate)";
-
-      const targetContext = hasTargetPositions
-        ? `\n\nTARGET POSITIONS (defined by consultant — THIS IS THE PRIMARY ANALYSIS FOCUS):\n${targetPositions.trim()}\nCRITICAL: Optimize the resume specifically for these target positions. The entire analysis — keywords, gaps, competitive intelligence, salary — must be calibrated to these targets. This overrides any assumption about the candidate's "current role" as the target.`
-        : "";
-
-      const jobSection = hasJob
-        ? `JOB DESCRIPTION ${jobContext}:\n${jobContent}${targetContext}`
-        : `ANALYSIS MODE: Generic resume quality analysis.\n${jobContext}\nEvaluate structure, impact, ATS readiness, and overall market positioning for ALL career areas present in the resume — do NOT focus only on the most recent role.\nmissingKeywords should list common keywords missing for the candidate's professional fields.${targetContext}`;
-
-      const userMessage = `CANDIDATE'S ORIGINAL RESUME (preserve ALL data exactly as-is — dates, companies, titles are sacred):
-${resumeText}
-
----
-
-${jobSection}
-
----
-
-ANALYSIS INSTRUCTIONS:
-
-Execute your SEVEN-LAYER analysis (ATS + Human Recruiter + Competitive Intelligence + Salary/Negotiation + LinkedIn + Multi-Career + Narrative Coherence).
-
-1. Score the resume BEFORE optimization (matchScore = sum of scoreBreakdown components)
-2. Calculate elite atsScore = DIRECT SUM of all six atsScoreBreakdown components
-3. Identify ALL 15 Career Killers that apply to this specific resume
-4. Generate the optimized resume maintaining IDENTICAL factual data (dates, companies, titles)
-5. For improvedBullets: identify 3-5 weak bullets from the original and show STAR-method transformations IN PORTUGUESE (use PT-BR action verbs: Liderou, Implementou, Gerou, Estruturou — NEVER Led, Built, Increased)
-6. List missingKeywords: exact terms from JD/target not present in resume
-7. projectedMatchScore MUST be >= matchScore (optimization can only improve, never worsen)
-8. COMPETITIVE INTELLIGENCE: analyze this candidate vs. the typical applicant pool for this role
-9. SALARY INTELLIGENCE: use real Brazilian market benchmarks — apply geographic multipliers and seniority premiums AUTOMATICALLY per the protocol above
-10. RECRUITER PROFILE: decode what the hiring manager fears and what triggers an immediate call
-11. LINKEDIN OPTIMIZATION: generate complete headline (using driverh formula), About section (with hook + narrative structure), featured section, skills, and profile tips (ALWAYS include SSI tip, CV-LinkedIn consistency tip, and Employee Advocacy tip)
-12. MULTI-CAREER: if candidate has experience in multiple areas, analyze ALL areas — do NOT reduce to only the most recent role
-13. NARRATIVE COHERENCE (Layer 7): evaluate career trajectory, professional summary as hook, value proposition presence and position, employer brand signals, and career thread logic
-14. VALUE PROPOSITION: assess currentStatement (what exists today), write an improvedStatement (2-3 lines answering: who + what delivers + unique differentiator), flag isInTopThird, list gaps
-15. JOBHUNTER STRATEGY: recommend primaryPlatforms (specific for this profile/sector in Brazil), searchTerms (5-8 exact search terms to use on platforms), companyTargets (4-6 real companies that hire this profile), approachTips (3 specific tips for this profile), urgencyLevel
-16. Be rigorously honest — if compatibility is low, say so and explain the gap
-17. All text in Brazilian Portuguese except internationally adopted English terms
-
-Return ONLY valid JSON. No markdown, no text outside JSON.
-
-JSON structure:
-{
-  "matchScore": <sum of scoreBreakdown — ORIGINAL score before optimization>,
-  "projectedMatchScore": <realistic score AFTER optimization — always >= matchScore>,
-  "jobTitle": "<exact job title from JD>",
-  "jobArea": "<specific area in Portuguese: e.g. Desenvolvimento Backend Node.js, Vendas B2B SaaS, Gestão de Pessoas no Varejo>",
-  "keywords": [<12-14 most critical JD keywords in order of importance>],
-  "suggestions": [<5-8 specific, honest, actionable suggestions — format: [AÇÃO] — [POR QUE prejudica] — [COMO corrigir passo a passo]>],
-  "optimizedResume": "<full optimized resume — PLAIN TEXT with \\n breaks — ZERO emojis/asterisks/markdown — dates/companies/titles IDENTICAL to original — in Brazilian Portuguese>",
-  "changes": [
-    {
-      "section": "<exact section changed>",
-      "description": "<what was wrong, what was fixed, why it impacts ATS AND recruiter — specific to THIS candidate>",
-      "impact": "<alto | medio | baixo>"
-    }
-  ],
-  "coverLetterPoints": [
-    "<point 1: connects candidate's trajectory with this company/job's main pain point>",
-    "<point 2: candidate's most relevant differentiator for this position>",
-    "<point 3: achievement or result that most impresses for this context>"
-  ],
-  "gapAnalysis": [<honest list of real gaps between candidate profile and job — can be [] if high compatibility>],
-  "scoreBreakdown": {
-    "technicalSkills": <0-30>,
-    "experience": <0-30>,
-    "keywords": <0-20>,
-    "tools": <0-10>,
-    "seniority": <0-10>
-  },
-  "atsScore": <DIRECT SUM of the six atsScoreBreakdown components>,
-  "atsScoreBreakdown": {
-    "parsing": <0-20>,
-    "keywordMatch": <0-25>,
-    "experienceQuality": <0-20>,
-    "impactMetrics": <0-15>,
-    "formatting": <0-10>,
-    "skillsAlignment": <0-10>
-  },
-  "strengths": [<3-5 specific strengths of this resume for this job>],
-  "weaknesses": [<3-5 specific weaknesses to address>],
-  "missingKeywords": [<exact keywords from JD not found in resume>],
-  "improvedBullets": [
-    {
-      "original": "<exact weak bullet from the resume>",
-      "improved": "<STAR-method rewrite with action verb + scale + result — in Portuguese>",
-      "reason": "<why this bullet was weak and what makes the improved version stronger>"
-    }
-  ],
-  "recruiterInsights": [<3-5 insights a senior recruiter would note about this candidate for this specific role>],
-  "seniorityLevel": "<Júnior | Pleno | Sênior | Gerente | Diretor | C-Level>",
-  "careerTrajectory": "<2-3 sentence narrative of candidate's career progression and positioning — in Portuguese>",
-  "formattingIssues": [<list of specific ATS-hostile formatting elements detected — empty [] if none>],
-
-  "competitiveEdges": [
-    "<2-4 concrete differentiators vs. the typical applicant pool — specific to THIS candidate and THIS role>",
-    "<e.g.: 'Combinação de 18 anos em vendas B2B + recrutamento é rara no pool de candidatos para Talent Acquisition — a maioria vem só de RH'>"
-  ],
-  "competitiveRisks": [
-    "<1-3 risks where other candidates may have an edge — honest and specific>",
-    "<e.g.: 'Candidatos mais jovens podem ter certificações ATS mais recentes (Gupy Certification, SAP SuccessFactors)'>"
-  ],
-
-  "salaryRange": {
-    "cltMin": <realistic CLT minimum in BRL — integer, no decimals>,
-    "cltMax": <realistic CLT maximum in BRL — integer, no decimals>,
-    "pjMin": <realistic PJ minimum in BRL — integer, no decimals, gross>,
-    "pjMax": <realistic PJ maximum in BRL — integer, no decimals, gross>,
-    "currency": "BRL",
-    "confidence": "<high | medium | low — based on how much salary data is inferable from the JD>",
-    "rationale": "<2-3 sentences explaining the range: what drives value up, what presses it down, market context>"
-  },
-  "negotiationTips": [
-    "<2-3 specific, actionable salary negotiation tips tailored to THIS candidate's strengths and gaps>"
-  ],
-
-  "linkedinOptimization": {
-    "headline": "<Optimized LinkedIn headline — max 220 chars — keyword-rich, value-focused, in Portuguese>",
-    "about": "<Full LinkedIn About section — max 2600 chars — first-person, hook + narrative + achievements + CTA — in Portuguese>",
-    "featuredSection": "<Specific recommendation for what to pin in Featured section — based on this candidate's background>",
-    "skillsToAdd": ["<10-15 LinkedIn skills in priority order — most searched first>"],
-    "profileTips": ["<4-5 specific, actionable tips for THIS candidate's LinkedIn profile — photo, banner, URL, recommendations, content>"]
-  },
-
-  "recruiterProfile": {
-    "companyType": "<startup | scale-up | corporativo | tradicional | consultoria | agência>",
-    "cultureSignals": "<2-3 sentences: what the JD language reveals about the culture and what they value>",
-    "recruiterFears": [
-      "<2-3 specific fears this recruiter has based on the JD — what bad hires or problems are they trying to avoid?>"
-    ],
-    "recruiterTriggers": [
-      "<2-3 specific triggers that will make THIS recruiter immediately excited — based on JD signals>"
-    ],
-    "idealNarrative": "<The one-paragraph story this recruiter wants the candidate to tell — what arc, what proof points, what tone>"
-  },
-
-  "valueProposition": {
-    "score": <0-100 — how strong and clear is the current value proposition>,
-    "currentStatement": "<extract the current 'hook' or value prop from the resume, or write 'Ausente — o resumo não possui proposta de valor clara'>",
-    "improvedStatement": "<Write a 2-3 line improved value proposition: [Seniority/área] + [resultado principal com número] + [diferencial único] + [tipo empresa/desafio ideal] — in Portuguese>",
-    "isInTopThird": <true if Professional Summary appears before the 2nd job experience, false otherwise>,
-    "gaps": ["<what is missing for a strong value proposition — be specific>"]
-  },
-
-  "jobhunterStrategy": {
-    "primaryPlatforms": ["<list 3-5 specific platforms for this profile in Brazil — e.g.: Gupy for tech/corporative, Catho for traditional industry, LinkedIn for executive, Vagas.com.br for logistics>"],
-    "searchTerms": ["<5-8 exact search terms the candidate should use on platforms and Google — use the role's exact market terminology>"],
-    "companyTargets": ["<4-6 real Brazilian companies or multinationals operating in Brazil that actively hire this profile — be specific>"],
-    "approachTips": ["<3 specific, personalized tips for how THIS candidate should approach recruiters on LinkedIn — based on their profile and target role>"],
-    "urgencyLevel": "<alta | média | baixa — based on: market demand for this profile, how competitive the field is, and any red flags like long gap>"
-  }
-}`;
-
-      // Inject pre-computed anchor into userMessage
-      const fullUserMessage = userMessage + atsAnchorContext;
-
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: ELITE_ATS_SYSTEM_PROMPT },
-          { role: "user", content: fullUserMessage },
-        ],
-        maxTokens: 6000,
-        temperature: 0.1,
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "elite_resume_analysis",
-            strict: true,
-            schema: ANALYSIS_JSON_SCHEMA,
-          },
-        },
+      // NOVO CÓDIGO - FAZENDO A CHAMADA À API EXTERNA DO PYTHON
+      // =========================================================
+      const response = await fetch(`${ENV.aiEngineUrl}/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resume_text: resumeText,
+          job_description: jobContent,
+          target_positions: targetPositions
+        }),
       });
 
-      const rawContent = response.choices[0]?.message?.content;
-      if (!rawContent) throw new Error("Resposta vazia da IA. Tente novamente.");
-      const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
-
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(content);
-      } catch {
-        // Attempt to extract JSON if wrapped in markdown fences
-        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
-        if (jsonMatch) {
-          try {
-            parsed = JSON.parse(jsonMatch[1]);
-          } catch {
-            throw new Error("Erro ao processar resposta da IA. Tente novamente.");
-          }
-        } else {
-          throw new Error("Erro ao processar resposta da IA. Tente novamente.");
-        }
+      if (!response.ok) {
+        throw new Error("Erro ao comunicar com o servidor de IA Python. Verifique se o serviço ai-engine está a correr no Render e se a variável AI_ENGINE_URL está correta.");
       }
+
+      const parsed = await response.json();
+      // =========================================================
 
       const validated = AnalysisResultSchema.parse(parsed);
 
@@ -1530,127 +1337,4 @@ Return JSON:
       try {
         parsed = JSON.parse(content);
       } catch {
-        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
-        if (jsonMatch) {
-          parsed = JSON.parse(jsonMatch[1]);
-        } else {
-          throw new Error("Erro ao processar resposta da IA. Tente novamente.");
-        }
-      }
-
-      const validated = AdaptResultSchema.parse(parsed);
-
-      const sanitize = (text: string): string =>
-        text
-          .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
-          .replace(/[\u2600-\u27BF]/g, "")
-          .replace(/\*\*([^*]+)\*\*/g, "$1")
-          .replace(/\*([^*]+)\*/g, "$1")
-          .replace(/__([^_]+)__/g, "$1")
-          .replace(/^#{1,6}\s+/gm, "")
-          .replace(/`([^`]+)`/g, "$1")
-          .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
-          .replace(/\n{3,}/g, "\n\n")
-          .trim();
-
-      return {
-        adaptedResume: sanitize(validated.adaptedResume),
-        platformTips: validated.platformTips,
-        whatChanged: validated.whatChanged,
-      };
-    }),
-
-  // ── generateFromScratch ────────────────────────────────────────────────────
-  generateFromScratch: publicProcedure
-    .input(
-      z.object({
-        wizardData: z.object({
-          name: z.string(),
-          title: z.string(),
-          city: z.string(),
-          phone: z.string(),
-          email: z.string(),
-          linkedin: z.string(),
-          summary: z.string(),
-          experiences: z.array(z.object({
-            role: z.string(),
-            company: z.string(),
-            period: z.string(),
-            description: z.string(),
-          })),
-          education: z.array(z.object({
-            course: z.string(),
-            institution: z.string(),
-            year: z.string(),
-          })),
-          skills: z.string(),
-          languages: z.string(),
-          certifications: z.string(),
-        }),
-      })
-    )
-    .mutation(async ({ input }) => {
-      const d = input.wizardData;
-
-      const systemPrompt = `You are a senior certified career consultant (CPRW) and professional resume writer specialized in Brazilian job market.
-
-Your task: create a complete, ATS-optimized professional resume using ONLY the information provided.
-
-ABSOLUTE RULES:
-1. Use ONLY the information provided. NEVER invent data, dates, companies, or skills.
-2. Transform informal descriptions into professional impact bullets with strong action verbs.
-3. The resume MUST be PLAIN TEXT with real line breaks (\\n).
-4. PROHIBITED: emojis, asterisks, markdown, hashtags, tables.
-5. Structure: Name > Title > Contact > Professional Summary > Core Competencies > Experience > Education > Languages > Certifications.
-6. Use action verbs in Portuguese: Liderou, Implementou, Desenvolveu, Aumentou, Gerenciou, Negociou, Conquistou, Entregou, Estruturou.
-7. Quantify results when the user mentions numbers.
-8. Section headers in UPPERCASE with correct Portuguese accents: EXPERIÊNCIA PROFISSIONAL, FORMAÇÃO ACADÊMICA, COMPETÊNCIAS PRINCIPAIS, CERTIFICAÇÕES, IDIOMAS.
-9. Return ONLY the resume text, no JSON, no additional explanations.`;
-
-      const expLines = d.experiences
-        .filter(e => e.role)
-        .map(e => `${e.role} | ${e.company} | ${e.period}\n${e.description}`)
-        .join("\n\n");
-
-      const eduLines = d.education
-        .filter(e => e.course)
-        .map(e => `${e.course} - ${e.institution}${e.year ? ` (${e.year})` : ""}`)
-        .join("\n");
-
-      const userMessage = `Create a professional resume with these details:
-
-NAME: ${d.name}
-TITLE: ${d.title}
-CITY: ${d.city}
-PHONE: ${d.phone}
-EMAIL: ${d.email}
-LINKEDIN: ${d.linkedin}
-
-SUMMARY (informal): ${d.summary}
-
-EXPERIENCES:
-${expLines}
-
-EDUCATION:
-${eduLines}
-
-SKILLS: ${d.skills}
-LANGUAGES: ${d.languages}
-CERTIFICATIONS: ${d.certifications}`;
-
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage },
-        ],
-        maxTokens: 3000,
-        temperature: 0.2,
-      });
-
-      const rawContent = response.choices[0]?.message?.content;
-      if (!rawContent) throw new Error("Resposta vazia da IA. Tente novamente.");
-      const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
-
-      return { generatedResume: sanitizeResume(content) };
-    }),
-});
+        const jsonMatch = content.match(/
