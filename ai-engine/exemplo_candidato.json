@@ -1,0 +1,71 @@
+{
+  "nome": "Felipe Leone",
+  "contato": {
+    "email": "felipe@metodoeasyjob.com",
+    "telefone": "+55 11 90000-0000",
+    "cidade": "São Paulo, SP",
+    "linkedin": "linkedin.com/in/felipeleone"
+  },
+  "titulo_atual": "Senior Talent Acquisition Consultant",
+  "resumo_atual": "Profissional de RH com experiência em recrutamento executivo.",
+  "experiencias": [
+    {
+      "cargo": "Headhunter Executivo",
+      "empresa": "Robert Half",
+      "local": "São Paulo, SP",
+      "periodo": "01/2021 – 06/2024",
+      "anos": 3.5,
+      "bullets": [
+        "Conduziu processos seletivos de C-Level e D-1 em fintechs e SaaS",
+        "Responsável por busca ativa no LinkedIn Recruiter e Salesforce Spotlight",
+        "Fechou 42 posições executivas em 18 meses, com ticket médio de R$ 480k",
+        "Gerenciou pipeline de 300+ candidatos simultâneos via Salesforce",
+        "Reduziu time-to-hire em 22% reestruturando cadeia de sourcing ativo"
+      ]
+    },
+    {
+      "cargo": "Consultor de Carreira",
+      "empresa": "Método EasyJob (consultoria própria)",
+      "local": "São Paulo, SP",
+      "periodo": "07/2024 – atual",
+      "anos": 1.0,
+      "bullets": [
+        "Atende clientes B2C e B2B em reposicionamento executivo",
+        "Desenhou metodologia própria baseada em ATS, XYZ e SSI do LinkedIn",
+        "Entregou +30 projetos de reposicionamento em 12 meses"
+      ]
+    }
+  ],
+  "formacao": [
+    {
+      "curso": "Administração",
+      "instituicao": "FGV",
+      "periodo": "2014 – 2018",
+      "detalhe": ""
+    }
+  ],
+  "certificacoes": [
+    "LinkedIn Talent Insights",
+    "Salesforce Admin Fundamentals"
+  ],
+  "idiomas": [
+    {"idioma": "Inglês", "nivel": "Avançado"},
+    {"idioma": "Espanhol", "nivel": "Intermediário"}
+  ],
+  "habilidades_declaradas": [
+    "LinkedIn Recruiter",
+    "Salesforce",
+    "Boolean Search",
+    "ATS Gupy",
+    "Executive Search",
+    "Employer Branding"
+  ],
+  "vaga_alvo": {
+    "titulo": "Head of Talent Acquisition",
+    "empresa": "Fintech Série B",
+    "senioridade": "Head",
+    "anos_requeridos": 5,
+    "descricao": "Liderar time de 6 recrutadores. Operar Gupy, Greenhouse e LinkedIn Recruiter. Definir estratégia de employer branding. Reporte ao CPO. Responsabilidade sobre P&L de aquisição de talento. Experiência comprovada em tech e SaaS obrigatória. Pessoa com visão estratégica, dados e liderança de times distribuídos."
+  },
+  "objetivo_carreira": "Head of Talent Acquisition em fintech Série B/C nos próximos 12 meses."
+}
