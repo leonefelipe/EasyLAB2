@@ -1337,10 +1337,10 @@ Return JSON:
       try {
         parsed = JSON.parse(content);
       } catch {
-        // Correção: usando \`{3} para não quebrar a formatação do bloco de código no chat
-        const jsonMatch = content.match(/`{3}(?:json)?\s*([\s\S]+?)\s*`{3}/);
-        if (jsonMatch) {
-          parsed = JSON.parse(jsonMatch[1]);
+        const firstBrace = content.indexOf('{');
+        const lastBrace = content.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1) {
+          parsed = JSON.parse(content.substring(firstBrace, lastBrace + 1));
         } else {
           throw new Error("Erro ao processar resposta da IA. Tente novamente.");
         }
@@ -1417,12 +1417,12 @@ ABSOLUTE RULES:
 
       const expLines = d.experiences
         .filter(e => e.role)
-        .map(e => `${e.role} | ${e.company} | ${e.period}\n${e.description}`)
+        .map(e => e.role + " | " + e.company + " | " + e.period + "\n" + e.description)
         .join("\n\n");
 
       const eduLines = d.education
         .filter(e => e.course)
-        .map(e => `${e.course} - ${e.institution}${e.year ? \` (\${e.year})\` : ""}`)
+        .map(e => e.course + " - " + e.institution + (e.year ? " (" + e.year + ")" : ""))
         .join("\n");
 
       const userMessage = `Create a professional resume with these details:
