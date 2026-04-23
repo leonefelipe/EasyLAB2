@@ -1,0 +1,26 @@
+# render.yaml — Blueprint do Render para o repo EasyLAB2
+# Este arquivo fica na raiz do repo. Ele diz ao Render para buildar
+# e rodar APENAS a pasta ai-engine/ como Web Service Python.
+# O restante do repo (client TS, server Node) é ignorado por este serviço.
+#
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: easylab2-ai-engine
+    runtime: python
+    plan: free                 # troque para starter ($7/mês) p/ remover cold-start
+    region: oregon
+    branch: main
+    rootDir: ai-engine         # ← chave: build e runtime dentro desta pasta
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn api:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: EASYJOB_MODEL
+        value: gpt-4o           # ou gpt-4o-mini para reduzir custo
+      - key: OPENAI_API_KEY
+        sync: false             # NÃO versionar — preencher pela dashboard do Render
