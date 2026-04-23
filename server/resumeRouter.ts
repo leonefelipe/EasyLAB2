@@ -1244,7 +1244,7 @@ export const resumeRouter = router({
       };
     }),
 
-  // ── adapt ──────────────────────────────────────────────────────────────────
+// ── adapt ──────────────────────────────────────────────────────────────────
   adapt: publicProcedure
     .input(
       z.object({
@@ -1337,4 +1337,128 @@ Return JSON:
       try {
         parsed = JSON.parse(content);
       } catch {
-        const jsonMatch = content.match(/
+        // Correção: usando \`{3} para não quebrar a formatação do bloco de código no chat
+        const jsonMatch = content.match(/`{3}(?:json)?\s*([\s\S]+?)\s*`{3}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[1]);
+        } else {
+          throw new Error("Erro ao processar resposta da IA. Tente novamente.");
+        }
+      }
+
+      const validated = AdaptResultSchema.parse(parsed);
+
+      const sanitize = (text: string): string =>
+        text
+          .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
+          .replace(/[\u2600-\u27BF]/g, "")
+          .replace(/\*\*([^*]+)\*\*/g, "$1")
+          .replace(/\*([^*]+)\*/g, "$1")
+          .replace(/__([^_]+)__/g, "$1")
+          .replace(/^#{1,6}\s+/gm, "")
+          .replace(/`([^`]+)`/g, "$1")
+          .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
+
+      return {
+        adaptedResume: sanitize(validated.adaptedResume),
+        platformTips: validated.platformTips,
+        whatChanged: validated.whatChanged,
+      };
+    }),
+
+  // ── generateFromScratch ────────────────────────────────────────────────────
+  generateFromScratch: publicProcedure
+    .input(
+      z.object({
+        wizardData: z.object({
+          name: z.string(),
+          title: z.string(),
+          city: z.string(),
+          phone: z.string(),
+          email: z.string(),
+          linkedin: z.string(),
+          summary: z.string(),
+          experiences: z.array(z.object({
+            role: z.string(),
+            company: z.string(),
+            period: z.string(),
+            description: z.string(),
+          })),
+          education: z.array(z.object({
+            course: z.string(),
+            institution: z.string(),
+            year: z.string(),
+          })),
+          skills: z.string(),
+          languages: z.string(),
+          certifications: z.string(),
+        }),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const d = input.wizardData;
+
+      const systemPrompt = `You are a senior certified career consultant (CPRW) and professional resume writer specialized in Brazilian job market.
+
+Your task: create a complete, ATS-optimized professional resume using ONLY the information provided.
+
+ABSOLUTE RULES:
+1. Use ONLY the information provided. NEVER invent data, dates, companies, or skills.
+2. Transform informal descriptions into professional impact bullets with strong action verbs.
+3. The resume MUST be PLAIN TEXT with real line breaks (\\n).
+4. PROHIBITED: emojis, asterisks, markdown, hashtags, tables.
+5. Structure: Name > Title > Contact > Professional Summary > Core Competencies > Experience > Education > Languages > Certifications.
+6. Use action verbs in Portuguese: Liderou, Implementou, Desenvolveu, Aumentou, Gerenciou, Negociou, Conquistou, Entregou, Estruturou.
+7. Quantify results when the user mentions numbers.
+8. Section headers in UPPERCASE with correct Portuguese accents: EXPERIÊNCIA PROFISSIONAL, FORMAÇÃO ACADÊMICA, COMPETÊNCIAS PRINCIPAIS, CERTIFICAÇÕES, IDIOMAS.
+9. Return ONLY the resume text, no JSON, no additional explanations.`;
+
+      const expLines = d.experiences
+        .filter(e => e.role)
+        .map(e => `${e.role} | ${e.company} | ${e.period}\n${e.description}`)
+        .join("\n\n");
+
+      const eduLines = d.education
+        .filter(e => e.course)
+        .map(e => `${e.course} - ${e.institution}${e.year ? \` (\${e.year})\` : ""}`)
+        .join("\n");
+
+      const userMessage = `Create a professional resume with these details:
+
+NAME: ${d.name}
+TITLE: ${d.title}
+CITY: ${d.city}
+PHONE: ${d.phone}
+EMAIL: ${d.email}
+LINKEDIN: ${d.linkedin}
+
+SUMMARY (informal): ${d.summary}
+
+EXPERIENCES:
+${expLines}
+
+EDUCATION:
+${eduLines}
+
+SKILLS: ${d.skills}
+LANGUAGES: ${d.languages}
+CERTIFICATIONS: ${d.certifications}`;
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
+        ],
+        maxTokens: 3000,
+        temperature: 0.2,
+      });
+
+      const rawContent = response.choices[0]?.message?.content;
+      if (!rawContent) throw new Error("Resposta vazia da IA. Tente novamente.");
+      const content = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+
+      return { generatedResume: sanitizeResume(content) };
+    }),
+});
