@@ -24,3 +24,9 @@ services:
         value: gpt-4o           # ou gpt-4o-mini para reduzir custo
       - key: OPENAI_API_KEY
         sync: false             # NÃO versionar — preencher pela dashboard do Render
+      - key: EASYJOB_ADMIN_USER
+        value: admin
+      - key: EASYJOB_ADMIN_PASSWORD
+        sync: false             # defina no Render para bloquear o acesso público
+      - key: MAX_UPLOAD_BYTES
+        value: "10485760"

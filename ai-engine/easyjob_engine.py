@@ -27,6 +27,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field, asdict
 from typing import Any
+from collections import Counter
 
 from openai import AsyncOpenAI
 
@@ -81,19 +82,62 @@ def _normalizar(texto: str) -> str:
 
 
 def _extrair_palavras_chave_vaga(descricao: str) -> list[str]:
-    """Extração simplificada de termos técnicos e verbos de senioridade."""
+    """Extração pragmática de keywords da vaga com foco em ATS + recrutador."""
     if not descricao:
         return []
     norm = _normalizar(descricao)
-    tokens = {tok for tok in norm.split() if len(tok) >= 3}
-    sinais = {
-        "lideranca", "lider", "gestao", "gerente", "coordenar", "estrategico",
-        "p&l", "pnl", "orcamento", "squad", "stakeholders", "okr", "kpi",
-        "salesforce", "gupy", "linkedin", "recruiter", "ats", "boolean",
-        "python", "sql", "aws", "power", "tableau", "agile", "scrum",
+
+    compostas = [
+        "talent acquisition", "human resources", "business partner", "people analytics",
+        "employee experience", "change management", "project management", "customer success",
+        "go to market", "data analysis", "machine learning", "artificial intelligence",
+        "salesforce recruiter", "linkedin recruiter", "applicant tracking system",
+        "power bi", "microsoft excel", "google workspace", "people management",
+        "team leadership", "stakeholder management", "continuous improvement",
+        "process optimization", "organizational development", "career consulting",
+        "headhunting", "executive search", "boolean search", "pipeline management",
+        "hiring manager", "talent pipeline", "candidate experience", "workday", "greenhouse",
+        "icims", "gupy", "salesforce", "linkedin", "recruiter", "ats", "boolean",
+        "python", "sql", "aws", "tableau", "power bi", "scrum", "agile", "okr", "kpi",
+        "pnl", "orcamento", "budget", "forecast", "crm", "saas", "fintech", "b2b", "b2c",
+    ]
+
+    encontrados = []
+    for termo in compostas:
+        if termo in norm:
+            encontrados.append(termo)
+
+    tokens = [tok for tok in norm.split() if len(tok) >= 3]
+    stop = {
+        "para", "com", "uma", "das", "dos", "que", "ser", "sao", "por", "nos", "nas",
+        "the", "and", "you", "will", "have", "from", "this", "that", "your", "our",
+        "uma", "mais", "anos", "ano", "sobre", "desejavel", "desejável", "experiencia",
+        "experiência", "responsavel", "responsável", "vaga", "cargo", "empresa", "time",
     }
-    ordenadas = [t for t in tokens if t in sinais or t.isalpha()]
-    return sorted(set(ordenadas))[:60]
+    freq = Counter(tok for tok in tokens if tok not in stop)
+    for tok, n in freq.most_common(80):
+        if n >= 2 or tok in {"senior", "pleno", "head", "manager", "lider", "lead", "director"}:
+            encontrados.append(tok)
+
+    return list(dict.fromkeys(encontrados))[:80]
+
+
+def _classificar_bullet(bullet: str) -> str:
+    b = _normalizar(bullet)
+    verbos_fortes = {
+        "liderou", "liderar", "implementou", "reduziu", "aumentou", "otimizou", "estruturou",
+        "definiu", "conduziu", "criou", "desenvolveu", "escalou", "reestruturou", "aprovou",
+        "negociou", "gerenciou", "coordenou", "executou", "implantou", "melhorou", "elevou",
+    }
+    tem_verbo = any(v in b for v in verbos_fortes)
+    tem_numero = bool(re.search(r"\d", bullet))
+    tem_metrica = bool(re.search(r"\d+\s*(%|mil|milh|k|m|dias|meses|anos|pessoas|usuarios|usuários|clientes|bps|x|r\$|usd)", b))
+    tem_escopo = any(s in b for s in ["equipe", "time", "produto", "budget", "orcamento", "orçamento", "regiao", "região", "clientes", "stakeholders", "operacao", "operação"])
+    if tem_verbo and (tem_metrica or (tem_numero and tem_escopo)):
+        return "AA"
+    if tem_verbo or tem_escopo:
+        return "R"
+    return "WS"
 
 
 def pre_score_ats(candidato: DadosCandidato) -> dict[str, Any]:
@@ -134,12 +178,13 @@ def pre_score_ats(candidato: DadosCandidato) -> dict[str, Any]:
     bullets_todos: list[str] = []
     for e in candidato.experiencias:
         bullets_todos += e.get("bullets", []) or []
-    com_metrica = sum(
-        1 for b in bullets_todos
-        if re.search(r"\d+\s*(%|mil|milh|k|m|pessoas|meses|dias|bps|x)", b.lower())
-    )
+    classificacoes = [_classificar_bullet(b) for b in bullets_todos]
+    aa = sum(1 for c in classificacoes if c == "AA")
+    rr = sum(1 for c in classificacoes if c == "R")
+    ws = sum(1 for c in classificacoes if c == "WS")
+    com_metrica = aa
     total_bullets = max(len(bullets_todos), 1)
-    impacto = min(com_metrica / total_bullets, 1.0) * 15
+    impacto = min((aa + rr * 0.45) / total_bullets, 1.0) * 15
 
     # --- Estrutura -------------------------------------------------------------
     tem_secoes = all([
@@ -151,6 +196,18 @@ def pre_score_ats(candidato: DadosCandidato) -> dict[str, Any]:
     estrutura = 10.0 if tem_secoes else 6.0
 
     total = round(km + exp + seniority + impacto + estrutura, 1)
+
+    recomendacoes = []
+    if missing[:10]:
+        recomendacoes.append(f"Incorporar em contexto as keywords críticas faltantes: {', '.join(missing[:10])}.")
+    if ws:
+        recomendacoes.append(f"Reescrever {ws} bullet(s) fraco(s) em formato XYZ com verbo forte e escopo explícito.")
+    if aa / total_bullets < 0.7:
+        recomendacoes.append("Elevar a proporção de achievements com métrica para pelo menos 70% dos bullets.")
+    if seniority < 10:
+        recomendacoes.append("Explicitar sinais de senioridade: equipe, orçamento, autonomia, escopo, stakeholders, P&L.")
+    if estrutura < 10:
+        recomendacoes.append("Completar contato, formação e heading principal para maximizar parsing ATS.")
 
     return {
         "ats_score_atual": total,
@@ -165,7 +222,9 @@ def pre_score_ats(candidato: DadosCandidato) -> dict[str, Any]:
         "keywords_missing": missing[:20],
         "bullets_totais": total_bullets,
         "bullets_com_metrica": com_metrica,
-        "ratio_achievement": round(com_metrica / total_bullets, 2),
+        "ratio_achievement": round(aa / total_bullets, 2),
+        "classificacao_bullets": {"AA": aa, "R": rr, "WS": ws},
+        "recomendacoes_prioritarias": recomendacoes,
     }
 
 

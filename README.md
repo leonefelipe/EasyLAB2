@@ -157,3 +157,13 @@ Para Azure OpenAI ou proxies compatíveis, adicione `OPENAI_BASE_URL=https://...
 - **Free**: dorme após 15 min de inatividade. Cold-start ~30s.
 - **Starter** ($7/mês): sempre ativo. Troque `plan: free` → `plan: starter`
   em `render.yaml` e re-commite.
+
+
+## Uso interno com proteção simples
+
+Se quiser travar o acesso ao sistema, defina no Render:
+
+- `EASYJOB_ADMIN_USER=admin`
+- `EASYJOB_ADMIN_PASSWORD=<sua-senha>`
+
+Com isso, o app passa a exigir Basic Auth para a interface e endpoints de API.

@@ -24,13 +24,14 @@ import zipfile
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from easyjob_engine import (
     DadosCandidato,
     LLMClient,
     gerar_entregaveis,
+    pre_score_ats,
 )
 from run_easyjob import (
     exportar_cv_docx,
@@ -38,8 +39,57 @@ from run_easyjob import (
     renderizar_roteiro_linkedin_markdown,
 )
 
+
 app = FastAPI(title="Método EasyJob — Motor de Reposicionamento Executivo")
 
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", 10 * 1024 * 1024))
+
+
+def _auth_enabled() -> bool:
+    return bool(os.environ.get("EASYJOB_ADMIN_PASSWORD"))
+
+
+def _is_public_path(path: str) -> bool:
+    return path in {"/health", "/docs", "/openapi.json", "/redoc"}
+
+
+def _unauthorized() -> JSONResponse:
+    return JSONResponse(
+        {"detail": "Autenticação necessária."},
+        status_code=401,
+        headers={"WWW-Authenticate": "Basic realm=EasyJob"},
+    )
+
+
+def _validar_basic_auth(request: Request) -> bool:
+    import base64
+    user = os.environ.get("EASYJOB_ADMIN_USER", "admin")
+    pwd = os.environ.get("EASYJOB_ADMIN_PASSWORD", "")
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Basic "):
+        return False
+    try:
+        raw = base64.b64decode(auth.split(" ", 1)[1]).decode("utf-8")
+        req_user, req_pwd = raw.split(":", 1)
+    except Exception:
+        return False
+    return req_user == user and req_pwd == pwd
+
+
+@app.middleware("http")
+async def basic_auth_middleware(request: Request, call_next):
+    if _auth_enabled() and not _is_public_path(request.url.path):
+        if not _validar_basic_auth(request):
+            return _unauthorized()
+    return await call_next(request)
+
+
+def _validar_upload(filename: str, conteudo: bytes) -> None:
+    if len(conteudo) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"Arquivo muito grande. Limite atual: {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.")
+    nome = filename.lower()
+    if not nome.endswith((".pdf", ".docx", ".txt")):
+        raise HTTPException(400, "Formato não suportado. Use PDF, DOCX ou TXT.")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # UI — formulário real
@@ -326,7 +376,23 @@ async def health() -> dict:
         "service": "easyjob-motor",
         "model": os.environ.get("EASYJOB_MODEL", "gpt-4o"),
         "has_openai_key": bool(os.environ.get("OPENAI_API_KEY")),
+        "auth_enabled": _auth_enabled(),
     }
+
+
+@app.get("/api/exemplo")
+async def api_exemplo() -> dict:
+    caminho = Path(__file__).with_name("exemplo_candidato.json")
+    return json.loads(caminho.read_text(encoding="utf-8"))
+
+
+@app.post("/api/diagnostico")
+async def api_diagnostico(payload: dict) -> dict:
+    try:
+        candidato = DadosCandidato(**payload)
+    except TypeError as e:
+        raise HTTPException(400, f"Payload inválido: {e}")
+    return pre_score_ats(candidato)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -352,16 +418,19 @@ def extrair_texto_docx(conteudo: bytes) -> str:
         from docx import Document
     except ImportError:
         raise HTTPException(500, "python-docx não instalado.")
+    tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
             tmp.write(conteudo)
             tmp_path = tmp.name
         doc = Document(tmp_path)
         txt = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-        Path(tmp_path).unlink(missing_ok=True)
         return txt.strip()
     except Exception as e:
         raise HTTPException(400, f"Falha ao ler DOCX: {e}")
+    finally:
+        if tmp_path:
+            Path(tmp_path).unlink(missing_ok=True)
 
 
 def extrair_texto_linkedin(url: str) -> str:
@@ -462,6 +531,7 @@ async def parsear_para_candidato(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/api/processar")
+@app.post("/api/gerar")
 async def processar(
     cv_file: UploadFile | None = File(None),
     cv_text: str | None = Form(None),
@@ -478,6 +548,7 @@ async def processar(
     cv_texto_final = (cv_text or "").strip()
     if cv_file is not None and cv_file.filename:
         conteudo = await cv_file.read()
+        _validar_upload(cv_file.filename, conteudo)
         nome = cv_file.filename.lower()
         if nome.endswith(".pdf"):
             cv_texto_final = extrair_texto_pdf(conteudo)
@@ -485,8 +556,6 @@ async def processar(
             cv_texto_final = extrair_texto_docx(conteudo)
         elif nome.endswith(".txt"):
             cv_texto_final = conteudo.decode("utf-8", errors="ignore")
-        else:
-            raise HTTPException(400, "Formato não suportado. Use PDF, DOCX ou TXT.")
 
     if not cv_texto_final:
         raise HTTPException(400, "Currículo vazio ou ilegível.")
@@ -495,6 +564,7 @@ async def processar(
     linkedin_final = ""
     if linkedin_file is not None and linkedin_file.filename:
         conteudo_li = await linkedin_file.read()
+        _validar_upload(linkedin_file.filename, conteudo_li)
         nome_li = linkedin_file.filename.lower()
         if nome_li.endswith(".pdf"):
             linkedin_final = extrair_texto_pdf(conteudo_li)

@@ -45,6 +45,7 @@ Abra `http://localhost:8000` — UI mínima com botão *Carregar exemplo* + *Ger
 - `GET /api/exemplo` — payload de exemplo
 - `POST /api/diagnostico` — pré-score ATS (sem LLM, instantâneo)
 - `POST /api/gerar` — gera e retorna ZIP com os 3 entregáveis
+- `POST /api/processar` — endpoint legado compatível com a UI
 
 ---
 
@@ -94,3 +95,13 @@ System prompts em `easyjob_engine.py` calibrados contra:
 
 **Vocabulário proibido** nos prompts: *hackear*, *burlar*, *driblar*, *enganar*.
 **Vocabulário oficial**: *alinhar*, *otimizar*, *calibrar*, *adequar*, *posicionar*.
+
+
+## Uso interno com proteção simples
+
+Se quiser travar o acesso ao sistema, defina no Render:
+
+- `EASYJOB_ADMIN_USER=admin`
+- `EASYJOB_ADMIN_PASSWORD=<sua-senha>`
+
+Com isso, o app passa a exigir Basic Auth para a interface e endpoints de API.
