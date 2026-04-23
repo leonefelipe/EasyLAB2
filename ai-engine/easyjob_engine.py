@@ -28,6 +28,7 @@ import unicodedata
 from dataclasses import dataclass, field, asdict
 from typing import Any
 from collections import Counter
+from copy import deepcopy
 
 from openai import AsyncOpenAI
 
@@ -81,45 +82,68 @@ def _normalizar(texto: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
-def _extrair_palavras_chave_vaga(descricao: str) -> list[str]:
-    """Extração pragmática de keywords da vaga com foco em ATS + recrutador."""
-    if not descricao:
+EN_STOPWORDS = {
+    "the","and","for","with","from","that","this","your","their","our","you","will","have","has","had","are","were","was","been","into","within","across","across","every","each","all","new","existing","using","use","used","through","about","just","not","but","also","than","across","someone","looking","someone","position","role","team","teams","manager","lead","leader","supervisor","business","inside","sales","structure","directly","responsible","responsibilities","requirements","experience","strong","skills","skill","mindset","operational","contribute","evolving","engine"
+}
+
+PT_STOPWORDS = {
+    "para","com","uma","das","dos","que","ser","sao","são","por","nos","nas","mais","anos","ano","sobre","experiencia","experiência","responsavel","responsável","vaga","cargo","empresa","perfil","profissional","atuacao","atuação","requisitos","atividades","desejavel","desejável","conhecimento","habilidades","gestao","gestão","time","times","equipe","equipes"
+}
+
+SKILL_PHRASES = [
+    "people management","gestao de pessoas","gestão de pessoas","team leadership","leadership","team management","sdr","sdr team","sales development","inbound leads","outbound","existing accounts","new business","inside sales","saas","crm","salesforce","hubspot","pipedrive","linkedin recruiter","linkedin sales navigator","apollo.io","account based marketing","abm","spin selling","bant","meddic","pipeline management","lead qualification","qualificacao de leads","qualificação de leads","analytical skills","analise de dados","análise de dados","ai first","artificial intelligence","inteligencia artificial","inteligência artificial"
+]
+
+RISKY_TERMS = {
+    "reduziu","aumentou","cresceu","gerou","expandiu","fechou","conduziu","liderou","qualificou","melhorou","otimizou","elevou","time-to-hire","receita","vendas","clientes","leads","conversao","conversão","contratos","r$","usd","%"
+}
+
+def _tokenizar_sem_stopwords(texto: str) -> list[str]:
+    norm = _normalizar(texto)
+    return [t for t in norm.split() if len(t) >= 3 and t not in EN_STOPWORDS and t not in PT_STOPWORDS]
+
+
+def _extrair_palavras_chave_vaga(descricao: str, titulo: str = "") -> list[str]:
+    """Extração mais rígida: remove stopwords e prioriza competências/phrases úteis."""
+    if not descricao and not titulo:
         return []
-    norm = _normalizar(descricao)
+    bruto = f"{titulo}\n{descricao}"
+    norm = _normalizar(bruto)
 
-    compostas = [
-        "talent acquisition", "human resources", "business partner", "people analytics",
-        "employee experience", "change management", "project management", "customer success",
-        "go to market", "data analysis", "machine learning", "artificial intelligence",
-        "salesforce recruiter", "linkedin recruiter", "applicant tracking system",
-        "power bi", "microsoft excel", "google workspace", "people management",
-        "team leadership", "stakeholder management", "continuous improvement",
-        "process optimization", "organizational development", "career consulting",
-        "headhunting", "executive search", "boolean search", "pipeline management",
-        "hiring manager", "talent pipeline", "candidate experience", "workday", "greenhouse",
-        "icims", "gupy", "salesforce", "linkedin", "recruiter", "ats", "boolean",
-        "python", "sql", "aws", "tableau", "power bi", "scrum", "agile", "okr", "kpi",
-        "pnl", "orcamento", "budget", "forecast", "crm", "saas", "fintech", "b2b", "b2c",
-    ]
+    encontrados: list[str] = []
+    for termo in SKILL_PHRASES:
+        if _normalizar(termo) in norm:
+            encontrados.append(termo.lower())
 
-    encontrados = []
-    for termo in compostas:
-        if termo in norm:
-            encontrados.append(termo)
+    # captura expressões simples que aparecem em responsabilidades/requisitos
+    for pat in [
+        r"\b(?:python|sql|aws|excel|tableau|power bi|looker|workday|greenhouse|gupy|icims)\b",
+        r"\b(?:fintech|healthtech|edtech|saas|b2b|b2c|rh tech|iot)\b",
+        r"\b(?:people management|team leadership|ai first|analytical skills|existing accounts|new business|inbound leads)\b",
+    ]:
+        encontrados.extend(re.findall(pat, norm))
 
-    tokens = [tok for tok in norm.split() if len(tok) >= 3]
-    stop = {
-        "para", "com", "uma", "das", "dos", "que", "ser", "sao", "por", "nos", "nas",
-        "the", "and", "you", "will", "have", "from", "this", "that", "your", "our",
-        "uma", "mais", "anos", "ano", "sobre", "desejavel", "desejável", "experiencia",
-        "experiência", "responsavel", "responsável", "vaga", "cargo", "empresa", "time",
-    }
-    freq = Counter(tok for tok in tokens if tok not in stop)
-    for tok, n in freq.most_common(80):
-        if n >= 2 or tok in {"senior", "pleno", "head", "manager", "lider", "lead", "director"}:
-            encontrados.append(tok)
+    tokens = _tokenizar_sem_stopwords(bruto)
+    freq = Counter(tokens)
+    title_tokens = set(_tokenizar_sem_stopwords(titulo))
+    allow = {"people","management","existing","accounts","inbound","outbound","qualification","qualificacao","qualificação","analytics","analytical","data"}
+    for tok, n in freq.most_common(100):
+        if tok in title_tokens or tok in allow or n >= 2:
+            if tok not in EN_STOPWORDS and tok not in PT_STOPWORDS:
+                encontrados.append(tok)
 
-    return list(dict.fromkeys(encontrados))[:80]
+    # de-dup e remove termos vazios demais
+    limpos=[]
+    seen=set()
+    banned={"for","the","and","with","that","this","role","position","team","teams","structure","directly","responsible","experience"}
+    for item in encontrados:
+        key=_normalizar(item)
+        if not key or key in banned or len(key) < 3:
+            continue
+        if key not in seen:
+            seen.add(key)
+            limpos.append(item)
+    return limpos[:60]
 
 
 def _classificar_bullet(bullet: str) -> str:
@@ -154,7 +178,7 @@ def pre_score_ats(candidato: DadosCandidato) -> dict[str, Any]:
 
     # --- Keyword match ---------------------------------------------------------
     vaga_desc = (candidato.vaga_alvo or {}).get("descricao", "")
-    kws = _extrair_palavras_chave_vaga(vaga_desc)
+    kws = _extrair_palavras_chave_vaga(vaga_desc, (candidato.vaga_alvo or {}).get("titulo", ""))
     matches = [k for k in kws if k in cv_norm]
     missing = [k for k in kws if k not in cv_norm]
     km = (len(matches) / max(len(kws), 1)) * 30 if kws else 15
@@ -240,6 +264,129 @@ def _serializar_cv_como_texto(c: DadosCandidato) -> str:
     return "\n".join(str(p) for p in partes if p)
 
 
+def _coletar_evidencias(c: DadosCandidato) -> dict[str, Any]:
+    texto = _serializar_cv_como_texto(c)
+    linkedin = c.contato.get("linkedin", "")
+    base = _normalizar(texto)
+    numeros = sorted(set(re.findall(r"(?:R\$\s*)?\d+[\d\.,]*%?", texto)))
+    titulos = [e.get("cargo", "") for e in c.experiencias if e.get("cargo")]
+    empresas = [e.get("empresa", "") for e in c.experiencias if e.get("empresa")]
+    bullets = []
+    for e in c.experiencias:
+        for b in e.get("bullets", []) or []:
+            bullets.append({"cargo": e.get("cargo", ""), "empresa": e.get("empresa", ""), "texto": b})
+    return {
+        "numeros_explicitos": numeros,
+        "titulos_exatos": titulos,
+        "empresas_exatas": empresas,
+        "bullets_originais": bullets,
+        "habilidades_declaradas": c.habilidades_declaradas,
+        "resumo_atual": c.resumo_atual,
+        "texto_normalizado": base[:20000],
+        "linkedin": linkedin,
+    }
+
+
+def _sanitizar_linha_factual(texto: str, evidencias: dict[str, Any]) -> tuple[str, bool]:
+    original = texto
+    numeros_saida = re.findall(r"(?:R\$\s*)?\d+[\d\.,]*%?", texto)
+    numeros_ok = set(evidencias.get("numeros_explicitos", []))
+    unsupported = [n for n in numeros_saida if n not in numeros_ok]
+    if unsupported:
+        texto = re.sub(r"(?:R\$\s*)?\d+[\d\.,]*%?\+?", "", texto)
+        texto = re.sub(r"\s{2,}", " ", texto).strip(" ,.-")
+    # remove construções fortes demais quando faltou evidência numérica
+    norm = _normalizar(texto)
+    if unsupported and any(term in norm for term in RISKY_TERMS):
+        texto = texto.rstrip('.;:') + " (métrica não informada no material original)."
+    changed = texto != original
+    return texto, changed
+
+
+def _sanitizar_cv_estrutura(cv: dict[str, Any], evidencias: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    out = deepcopy(cv)
+    avisos=[]
+    # resumo
+    out["resumo_executivo"], changed = _sanitizar_linha_factual(out.get("resumo_executivo", ""), evidencias)
+    if changed:
+        avisos.append("Resumo executivo continha números/afirmações não comprovados e foi saneado.")
+    aa_count=0; r_count=0
+    for exp in out.get("experiencias", []):
+        new_bullets=[]
+        for b in exp.get("bullets", []):
+            texto = b.get("texto", "")
+            texto2, changed = _sanitizar_linha_factual(texto, evidencias)
+            if changed:
+                avisos.append(f"Bullet saneado em {exp.get('empresa','empresa')}: removida métrica não comprovada.")
+            cls = b.get("classificacao", "R")
+            if re.search(r"(?:R\$\s*)?\d+[\d\.,]*%?", texto2):
+                cls = "AA"
+                aa_count += 1
+            else:
+                cls = "R"
+                r_count += 1
+            new_bullets.append({"texto": texto2, "classificacao": cls})
+        exp["bullets"] = new_bullets
+    meta = out.setdefault("metadados", {})
+    meta["avisos_saneamento"] = list(dict.fromkeys(avisos))
+    meta["bullets_aa"] = aa_count
+    meta["bullets_r"] = r_count
+    return out, list(dict.fromkeys(avisos))
+
+
+def _sanitizar_linkedin(roteiro: dict[str, Any], evidencias: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    out = deepcopy(roteiro)
+    avisos=[]
+    for path in [
+        ("headline","recomendado"),
+        ("sobre","recomendado_completo"),
+    ]:
+        d=out
+        for key in path[:-1]: d=d.setdefault(key,{})
+        last=path[-1]
+        d[last], changed = _sanitizar_linha_factual(d.get(last,""), evidencias)
+        if changed: avisos.append(f"{'.'.join(path)} saneado por conter afirmação não comprovada.")
+    for exp in out.get("experiencia", []):
+        exp["bullet_modelo"], changed = _sanitizar_linha_factual(exp.get("bullet_modelo", ""), evidencias)
+        if changed: avisos.append(f"Bullet modelo de LinkedIn saneado em {exp.get('empresa','empresa')}." )
+    out["avisos_fatuais"] = list(dict.fromkeys(avisos))
+    return out, list(dict.fromkeys(avisos))
+
+
+def _sanitizar_relatorio(markdown: str, evidencias: dict[str, Any], diagnostico: dict[str, Any]) -> tuple[str, list[str]]:
+    avisos=[]
+    linhas=[]
+    for linha in markdown.splitlines():
+        nova, changed = _sanitizar_linha_factual(linha, evidencias)
+        if changed:
+            avisos.append("Linha do relatório saneada por conter afirmação numérica não comprovada.")
+        linhas.append(nova)
+    # injeta nota factual
+    nota = (
+        "\n> Nota metodológica: números e métricas só são tratados como fatos quando aparecem no material original. "
+        "Quando não há comprovação documental, as recomendações são interpretativas e devem ser validadas antes do uso final.\n"
+    )
+    texto = "\n".join(linhas)
+    if "Nota metodológica" not in texto:
+        texto += nota
+    return texto, list(dict.fromkeys(avisos))
+
+
+def _montar_user_content(c: DadosCandidato, diagnostico: dict) -> str:
+    evidencias = _coletar_evidencias(c)
+    return (
+        "### DADOS DO CANDIDATO (JSON cru)\n"
+        f"{json.dumps(asdict(c), ensure_ascii=False, indent=2)}\n\n"
+        "### DIAGNÓSTICO DETERMINÍSTICO PRÉ-LLM (âncora de calibração)\n"
+        f"{json.dumps(diagnostico, ensure_ascii=False, indent=2)}\n\n"
+        "### EVIDÊNCIAS FACTUAIS EXTRAÍDAS (NÃO INVENTAR NADA ALÉM DISSO)\n"
+        f"{json.dumps(evidencias, ensure_ascii=False, indent=2)}\n\n"
+        "Execute o mandato conforme o system prompt. Responda no schema definido. "
+        "Toda afirmação quantitativa precisa existir em EVIDÊNCIAS FACTUAIS. "
+        "Se a prova não existir, escreva sem número e marque a recomendação como sugestão condicional."
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 4. SYSTEM PROMPTS (tom executivo, base nos 4 estudos)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -294,7 +441,7 @@ Produzir um currículo em português-Brasil que atenda simultaneamente a dois av
 ## Proibições estritas
 - Nada de "hackear", "burlar", "driblar" sistemas. A abordagem é de **alinhamento estratégico** e **otimização de perfil**.
 - Nada de keyword stuffing, texto invisível, prompt injection, seções falsas.
-- Nada de métricas inventadas. Se o candidato não forneceu o número, reescreva sem número, mas com verbo forte e escopo.
+- Nada de métricas inventadas. Se o candidato não forneceu o número, reescreva sem número, com verbo forte e escopo, e nunca use placeholders numéricos. Toda métrica deve existir literalmente no bloco EVIDÊNCIAS FACTUAIS.
 
 ## Saída obrigatória
 Responda ESTRITAMENTE em JSON válido, sem texto fora do JSON, no schema:
@@ -352,7 +499,7 @@ Produzir um ROTEIRO OPERACIONAL DE ALTERAÇÃO DO PERFIL. Não um perfil genéri
    Regras:
    - Peso máximo de keywords de busca booleana (recrutadores buscam por cargo + ferramenta + setor).
    - Zero emojis ornamentais. Uso moderado do pipe (|) como separador.
-   - Nunca usar rótulos amadores ("apaixonado por...", "humano antes de profissional", "em busca de oportunidade" salvo último caso).
+   - Nunca usar rótulos amadores ("apaixonado por...", "humano antes de profissional", "em busca de oportunidade" salvo último caso). É proibido declarar resultado quantitativo ou liderança de equipe sem evidência literal.
 
 2. **Sobre / About (até 2.600 caracteres, ideal 1.200-1.800)**
    Estrutura obrigatória em 4 blocos curtos (não em parágrafo único):
@@ -491,7 +638,7 @@ Estratégia de Carreira e Posicionamento Profissional
 - Zero clichê motivacional. Zero "acredite em você". Zero emojis.
 - Usar números sempre que possível. Quando o dado for estimativa, indicar faixa e base metodológica.
 - Nunca escrever "hackear", "burlar", "driblar", "enganar" o ATS. Usar: "alinhar", "otimizar", "calibrar", "adequar à taxonomia de", "atender aos requisitos estruturais de".
-- Quando citar ATS ou recrutador, trate-os como contrapartes profissionais do processo, não como adversários.
+- Quando citar ATS ou recrutador, trate-os como contrapartes profissionais do processo, não como adversários. É proibido consolidar como fato qualquer número, prazo, salário ou percentual ausente das evidências.
 
 ## Saída
 Markdown puro, pronto para ser exportado como PDF de alta apresentação. Sem blocos de código. Sem comentários meta sobre o documento. Apenas o relatório.
@@ -608,16 +755,6 @@ def renderizar_cv_markdown(cv: dict[str, Any]) -> str:
 # 7. MOTOR PRINCIPAL — GERAÇÃO DOS 3 ENTREGÁVEIS EM PARALELO
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _montar_user_content(c: DadosCandidato, diagnostico: dict) -> str:
-    return (
-        "### DADOS DO CANDIDATO (JSON cru)\n"
-        f"{json.dumps(asdict(c), ensure_ascii=False, indent=2)}\n\n"
-        "### DIAGNÓSTICO DETERMINÍSTICO PRÉ-LLM (âncora de calibração)\n"
-        f"{json.dumps(diagnostico, ensure_ascii=False, indent=2)}\n\n"
-        "Execute o mandato conforme o system prompt. Responda no schema definido."
-    )
-
-
 async def _gerar_cv(llm: LLMClient, user_content: str) -> dict:
     raw = await llm.gerar(SYSTEM_CV_OTIMIZADO, user_content)
     return json.loads(raw)
@@ -645,6 +782,12 @@ async def gerar_entregaveis(
         _gerar_linkedin(llm, user_content),
         _gerar_relatorio(llm, user_content),
     )
+
+    evidencias = _coletar_evidencias(candidato)
+    cv_estrut, avisos_cv = _sanitizar_cv_estrutura(cv_estrut, evidencias)
+    roteiro, avisos_li = _sanitizar_linkedin(roteiro, evidencias)
+    relatorio, avisos_rel = _sanitizar_relatorio(relatorio, evidencias, diagnostico)
+    diagnostico["avisos_fatuais"] = list(dict.fromkeys(avisos_cv + avisos_li + avisos_rel))
 
     return Entregaveis(
         cv_otimizado_markdown=renderizar_cv_markdown(cv_estrut),
